@@ -36,7 +36,19 @@ A lightweight rework of the DECENT espresso shot printing server. Compatible wit
 | 3-platform packaging | Manual | **GitHub Actions automated** |
 | Known bug fixes | Empty `by_weight` crash; same-second filename collision | Fixed |
 
-## Quick Start
+## Download & Run (pre-built binaries)
+
+No Python needed — grab your platform's file from the [Releases page](https://github.com/Sofronio/DecentEspressoPrintTheShot-beta/releases):
+
+| Platform | File | How to run |
+|---|---|---|
+| Windows | `PrintTheShot-windows-x64.exe` | double-click, then open `http://localhost:8000` |
+| macOS | `PrintTheShot-macos.zip` | unzip → double-click `PrintTheShot.app`, then open `http://localhost:8000` |
+| Linux | `PrintTheShot-linux` | `chmod +x PrintTheShot-linux && ./PrintTheShot-linux`, then open `http://localhost:8000` |
+
+> The binaries are **built automatically by GitHub Actions** whenever a `v*` tag is pushed (e.g. `git tag v2.0-beta.2 && git push origin v2.0-beta.2`) — check the [Actions page](https://github.com/Sofronio/DecentEspressoPrintTheShot-beta/actions) for build status and the Releases page for the newest packages.
+
+## Quick Start (from source)
 
 ```bash
 # Run from source (pillow only)

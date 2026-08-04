@@ -36,7 +36,19 @@ DECENT 咖啡机冲泡数据打印服务器的**轻量重构版**。兼容原版
 | 三平台打包 | 手动 | **GitHub Actions 自动构建** |
 | 已知缺陷修复 | 空 `by_weight` 崩溃;同秒上传撞车 | 已修复 |
 
-## 快速开始
+## 下载即用(预构建版本)
+
+不需要 Python 环境——直接从 [Releases 页面](https://github.com/Sofronio/DecentEspressoPrintTheShot-beta/releases) 下载对应平台的文件:
+
+| 平台 | 文件 | 运行方式 |
+|---|---|---|
+| Windows | `PrintTheShot-windows-x64.exe` | 双击运行,浏览器打开 `http://localhost:8000` |
+| macOS | `PrintTheShot-macos.zip` | 解压后双击 `PrintTheShot.app`,浏览器打开 `http://localhost:8000` |
+| Linux | `PrintTheShot-linux` | `chmod +x PrintTheShot-linux && ./PrintTheShot-linux`,浏览器打开 `http://localhost:8000` |
+
+> 二进制由 **GitHub Actions 自动打包**:推送 `v*` tag(如 `git tag v2.0-beta.2 && git push origin v2.0-beta.2`)即自动构建三平台并发布。构建状态见 [Actions 页面](https://github.com/Sofronio/DecentEspressoPrintTheShot-beta/actions),最新安装包见 Releases 页面。
+
+## 快速开始(源码运行)
 
 ```bash
 # 源码运行(仅需 pillow)
