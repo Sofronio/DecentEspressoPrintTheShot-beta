@@ -1,179 +1,181 @@
 # PrintTheShot Beta
 
-> ⚠️ **测试状态说明**:本项目仅完成了软件层面的开发与模拟数据测试,**尚未连接真实 DECENT 咖啡机(DE1)与热敏打印机进行实机验证**。上传端点的数据格式基于真实 DE1 导出的 JSON,打印链路沿用原版的 lpr/CUPS 方案,但实机打印效果与插件交互仍需真机确认。
+[中文文档](README_zh.md) | English
 
-## 截图
+> ⚠️ **Test Status**: This project is complete at the software level and tested with simulated data, but has **NOT yet been verified against a real DECENT espresso machine (DE1) and thermal receipt printer**. The upload data format is based on real DE1-exported JSON, and the print pipeline reuses the original lpr/CUPS approach — but real-machine printing and plugin interaction still need hardware confirmation.
 
-**Web 管理界面**
+## Screenshots
 
-![Web 管理界面](screenshots/webui.png)
+**Web UI**
 
-**打印效果**(模拟数据渲染,PNG)
+![Web UI](screenshots/webui_en.png)
 
-![打印效果](screenshots/print_sample.png)
+**Printed output** (simulated data, PNG)
+
+![Printed output](screenshots/print_sample_en.png)
 
 ---
 
-DECENT 咖啡机冲泡数据打印服务器的**轻量重构版**。兼容原版(DecentEspressoPrintTheShot)的插件、上传端点和管理界面。
+A lightweight rework of the DECENT espresso shot printing server. Compatible with the original project's (DecentEspressoPrintTheShot) plugin, upload endpoint, and management UI.
 
-## 特性对照(Beta vs v1.6)
+## Feature Comparison (Beta vs v1.6)
 
-| 特性 | v1.6 | Beta |
+| Feature | v1.6 | Beta |
 |---|---|---|
-| 依赖 | matplotlib + numpy + pillow | **仅 pillow** |
-| 中文字体 | 依赖系统字体(常缺) | **内置 Noto Sans CJK**(跨平台一致) |
-| 打包体积 | ~80MB | ~30MB |
-| 启动速度 | ~2.5s(matplotlib 导入) | ~0.3s |
-| Web 管理界面 | 内嵌 HTML 字符串 | **独立模板 + 中英双语** |
-| 历史数据 | 重启即丢 | **持久化(index.json),重启不丢** |
-| 数据浏览 | 列表 | **日期筛选 + 前后日切换 + 翻页(9/18/36 每页)** |
-| 统计 | 无 | **三列分布:日期 / 冲煮方案 / 豆子** |
-| 大图/下载 | 无 | **点图看大图,JSON/PNG 一键下载** |
-| 插件分发 | 单一下载 | **本地版 + GitHub 版 + TXT 版(蓝牙发送)** |
-| 在线更新 | 无 | **服务自更新(自动备份)** |
-| 三平台打包 | 手动 | **GitHub Actions 自动构建** |
-| 已知缺陷修复 | 空 `by_weight` 崩溃;同秒上传撞车 | 已修复 |
+| Dependencies | matplotlib + numpy + pillow | **pillow only** |
+| CJK font | System-dependent (often missing) | **Bundled Noto Sans CJK** (consistent everywhere) |
+| Package size | ~80MB | ~30MB |
+| Startup time | ~2.5s (matplotlib import) | ~0.3s |
+| Web UI | Inline HTML strings | **Standalone template, EN/中文 bilingual** |
+| History | Lost on restart | **Persisted (index.json), survives restarts** |
+| Data browsing | Flat list | **Date filter + prev/next day + pagination (9/18/36)** |
+| Statistics | None | **3-column: date / brew profile / bean distribution** |
+| Large view / downloads | None | **Click thumbnail for large view; JSON/PNG downloads** |
+| Plugin distribution | Single download | **Local + GitHub + TXT (for Bluetooth)** |
+| Online update | None | **Self-update with auto backup** |
+| 3-platform packaging | Manual | **GitHub Actions automated** |
+| Known bug fixes | Empty `by_weight` crash; same-second filename collision | Fixed |
 
-## 快速开始
+## Quick Start
 
 ```bash
-# 源码运行(仅需 pillow)
+# Run from source (pillow only)
 pip install -r scripts/requirements.txt
-python print_the_shot_server.py            # 默认端口 8000
+python print_the_shot_server.py            # default port 8000
 ```
 
-打开 `http://localhost:8000` 使用管理界面。
+Open `http://localhost:8000` for the management UI.
 
-## 使用指南(Web 界面)
+## Web UI Guide
 
-- **状态卡**:运行状态、接收数据数、打印开关、豆子信息开关
-- **最近数据**:默认显示今天的冲泡记录,支持
-  - 日期下拉 + ◀ ▶ 前后日切换
-  - 每页 9 / 18 / 36 条(记忆选择),翻页浏览
-  - 点缩略图**查看大图**;每张卡片可**打印 / 下载 JSON / 下载 PNG**
-  - 卡片标题 = `豆子 - 冲煮方案`
-- **统计数据**(一行三列):
-  - 按日期分布:围绕日均值的发散条形图(蓝=高于均值,橙=低于均值)
-  - 冲煮方案分布、豆子分布
-- **上传区**:拖拽 JSON 文件即可手动触发渲染 + 打印
-- **插件区**:本地版(匹配当前版本)/ GitHub 最新版 / **TXT 版**(蓝牙发送到平板时安卓端常拒绝 .tcl 扩展名,`tcl.txt` 可正常传输)
-- **服务更新**:检查更新 → 从 GitHub 更新(自动备份旧版到 `backup/`)
+- **Status card**: running state, shots received, print toggle, bean-info toggle
+- **Recent data**: shows today's shots by default; supports
+  - Date dropdown + ◀ ▶ prev/next day navigation
+  - Page size 9 / 18 / 36 per page (remembered), paginated browsing
+  - Click a thumbnail for the **large view**; each card offers **print / download JSON / download PNG**
+  - Card title = `bean - brew profile`
+- **Statistics** (one row, three columns):
+  - By date: diverging bars around the daily average (blue = above, orange = below)
+  - Brew profile distribution, bean distribution
+- **Upload**: drag & drop a JSON file to trigger render + print manually
+- **Plugin section**: local version (matches this server) / GitHub latest / **TXT version** (Android often rejects `.tcl` over Bluetooth — `tcl.txt` transfers fine)
+- **Service update**: check for updates → update from GitHub (auto-backup to `backup/`)
 
-## 端到端部署(DE1 → 打印)
+## End-to-End Deployment (DE1 → print)
 
-1. 在运行本服务的电脑上启动服务器,记下本机 IP(启动横幅会显示)
-2. 从管理界面**插件区**下载插件(`plugin.tcl` 或 TXT 版改名)
-3. 将插件复制到 DE1 平板的 SD 卡:`/de1plus/plugins/print_the_shot/plugin.tcl`
-4. 重启 DE1App,进入 设置 → 插件 → Print The Shot,配置:
-   - 服务器网址:`你的电脑IP:8000`(例如 `192.168.1.100:8000`)
-   - 服务器端点:`upload`
-   - 启用 HTTP
-5. 萃取完成后数据自动上传 → 图表自动渲染 → 自动打印
+1. Start the server and note your machine's IP (shown in the startup banner)
+2. Download the plugin from the **plugin section** of the web UI (`plugin.tcl` or the TXT version renamed)
+3. Copy it to the DE1 tablet's SD card: `/de1plus/plugins/print_the_shot/plugin.tcl`
+4. Restart DE1App, go to Settings → Plugins → Print The Shot, configure:
+   - Server URL: `your-computer-ip:8000` (e.g. `192.168.1.100:8000`)
+   - Server endpoint: `upload`
+   - Use HTTP: enabled
+5. Shots upload automatically after brewing → chart renders → auto-print
 
-## 仅渲染测试(不启动服务器)
+## Render-Only Testing (no server)
 
 ```bash
 python print_the_shot_server.py --render shot.json out.png
-# 同时生成 out_print.bmp(打印用二值图)
+# also produces out_print.bmp (1-bit image for printing)
 ```
 
-样例数据在 `sample_shots/`。想生成一个月(约 1670 条)的模拟数据:
+Sample data is in `sample_shots/`. Generate a month (~1670 shots) of simulated data:
 
 ```bash
-python scripts/generate_test_data.py 31 50   # 天数 每天杯数
+python scripts/generate_test_data.py 31 50   # days  shots-per-day
 ```
 
-## 更新机制
+## Update Mechanism
 
-- **检查更新**:管理界面「服务更新」卡片 → 检查更新,对比本地/远程版本
-- **从 GitHub 更新**:下载仓库 ZIP → 校验内容 → **自动备份旧版到 `backup/<时间戳>/`** → 替换服务器程序/网页模板/插件 → **重启服务器生效**
-- 打包版不支持在线自更新(程序在 exe 内),请从 GitHub Releases 下载新安装包
+- **Check updates**: Web UI → Service Update card → Check; compares local vs remote version
+- **Update from GitHub**: downloads the repo ZIP → validates content → **auto-backs up the old version to `backup/<timestamp>/`** → replaces server/web template/plugin → **restart the server to apply**
+- Packaged builds can't self-update (code is inside the executable) — download the new installer from GitHub Releases
 
-## 打包(单文件可执行)
+## Packaging (single-file executables)
 
-| 平台 | 命令 |
+| Platform | Command |
 |---|---|
-| macOS | `./scripts/build_macos.sh` → `dist/PrintTheShot` + `.app` |
+| macOS | `./scripts/build_macos.sh` → `dist/PrintTheShot` + `.app` + zip |
 | Linux | `./scripts/build_linux.sh` → `dist/PrintTheShot` |
 | Windows | `scripts\build_windows.bat` → `dist\PrintTheShot.exe` |
 
-**推荐**:直接打 tag 推送到 GitHub,Actions 自动构建三平台二进制并挂到 Releases:
+**Recommended**: push a tag — Actions builds all three platforms and attaches them to Releases:
 
 ```bash
 git tag v2.0-beta.1 && git push origin v2.0-beta.1
 ```
 
-公开仓库的 GitHub Actions **完全免费**,无需本地分发安装包。
+GitHub Actions is **completely free for public repositories** — no local packaging or distribution needed.
 
-Release 资产命名(打 tag 后自动生成):
+Release assets (auto-generated per tag):
 
-| 文件 | 平台 | 说明 |
+| File | Platform | Notes |
 |---|---|---|
-| `PrintTheShot-linux` | Linux | 命令行直接运行 |
-| `PrintTheShot-macos.zip` | macOS | 解压得到 .app,双击运行 |
-| `PrintTheShot-windows-x64.exe` | Windows | 双击运行 |
+| `PrintTheShot-linux` | Linux | run from terminal |
+| `PrintTheShot-macos.zip` | macOS | unzip → `PrintTheShot.app`, double-click to run |
+| `PrintTheShot-windows-x64.exe` | Windows | double-click to run |
 
-> CI 说明:构建流水线见 `.github/workflows/build.yml`,完整踩坑记录与发布验证清单见 [docs/CI.md](docs/CI.md)。要点:Windows 构建必须用 `python -m pip`;构建失败会显式标红;Release 按平台命名,不会互相覆盖。
+> CI pipeline: `.github/workflows/build.yml`; full troubleshooting history and release checklist in [docs/CI.md](docs/CI.md). Key points: Windows builds must use `python -m pip`; build failures are surfaced explicitly; Release assets are named per platform and never overwrite each other.
 
-## CLI 参数
+## CLI Options
 
-| 参数 | 说明 |
+| Flag | Description |
 |---|---|
-| `--port N` | 监听端口(默认 8000) |
-| `--render json [png]` | 仅渲染图表,不启动服务器 |
-| `--no-print` | 启动时禁用自动打印 |
+| `--port N` | Listen port (default 8000) |
+| `--render json [png]` | Render a chart only, without starting the server |
+| `--no-print` | Disable auto-print on startup |
 
-## 目录结构
+## Directory Layout
 
 ```
-print_the_shot_server.py    # 主程序(HTTP + 渲染 + 打印 + 更新)
-web/index.html              # 管理界面模板({{LANG}}/{{VERSION}} 占位)
-fonts/                      # 内置字体(Noto Sans CJK SC, SIL OFL)
-plugin/plugin.tcl           # DE1 插件(与原版兼容)
-scripts/                    # 打包脚本 + PyInstaller spec + 测试数据生成器
-sample_shots/               # 样例数据
-screenshots/                # 文档截图
-.github/workflows/          # 三平台 CI
-shots_data/                 # 运行时生成:上传数据 + index.json(历史索引)
-shots_images/               # 运行时生成:图表 PNG
-backup/                     # 运行时生成:更新前的备份
+print_the_shot_server.py    # main program (HTTP + render + print + update)
+web/index.html              # web UI template ({{LANG}}/{{VERSION}} placeholders)
+fonts/                      # bundled font (Noto Sans CJK SC, SIL OFL)
+plugin/plugin.tcl           # DE1 plugin (compatible with v1.6)
+scripts/                    # build scripts + PyInstaller spec + test-data generator
+sample_shots/               # sample data
+screenshots/                # doc screenshots
+.github/workflows/          # 3-platform CI
+shots_data/                 # runtime: uploaded JSON + index.json (history index)
+shots_images/               # runtime: chart PNGs
+backup/                     # runtime: pre-update backups
 ```
 
 ## API
 
-| 方法 | 路径 | 说明 |
+| Method | Path | Description |
 |---|---|---|
-| POST | `/upload?machine_id=...` | JSON/multipart 上传,自动渲染+打印 |
-| GET | `/api/status` | 服务器状态 |
-| GET | `/api/shots[?date=YYYY-MM-DD]` | 数据列表(按日期筛选),含可用日期 |
-| GET | `/api/stats` | 统计(总量/日期分布/方案/豆子) |
-| GET | `/api/queue` | 打印队列 |
-| GET | `/api/settings` `/api/language` | 设置与语言 |
-| POST | `/api/print` | 手动打印 `{filename}` |
-| POST | `/api/settings/beaninfo` `/api/settings/print` | 开关豆子信息/打印 |
-| POST | `/api/language` | 切换语言 |
-| DELETE | `/api/queue` | 清空队列 |
-| GET | `/images/*.png` `/download/json/*` | 图片与 JSON 下载 |
-| GET | `/plugin/plugin.tcl` `/plugin/plugin.tcl.txt` | 插件下载(TXT 版供蓝牙) |
-| GET | `/api/update/check` | 检查更新 |
-| POST | `/api/update` `/api/plugin/update` | 更新服务/插件 |
+| POST | `/upload?machine_id=...` | JSON/multipart upload, auto render + print |
+| GET | `/api/status` | server status |
+| GET | `/api/shots[?date=YYYY-MM-DD]` | shot list (filtered by date), includes available dates |
+| GET | `/api/stats` | statistics (totals/date/profile/bean distribution) |
+| GET | `/api/queue` | print queue |
+| GET | `/api/settings` `/api/language` | settings & language |
+| POST | `/api/print` | manual print `{filename}` |
+| POST | `/api/settings/beaninfo` `/api/settings/print` | toggle bean info / printing |
+| POST | `/api/language` | switch language |
+| DELETE | `/api/queue` | clear queue |
+| GET | `/images/*.png` `/download/json/*` | image & JSON downloads |
+| GET | `/plugin/plugin.tcl` `/plugin/plugin.tcl.txt` | plugin download (TXT for Bluetooth) |
+| GET | `/api/update/check` | check for updates |
+| POST | `/api/update` `/api/plugin/update` | update service / plugin |
 
-## 打印
+## Printing
 
-- **macOS/Linux**:走 `lpr`/`lp`(CUPS),需配置 80mm 热敏打印机,纸张 `Custom.80x180mm`
-- **Windows**:纯 ctypes 调用系统打印 API(无 pywin32 依赖),使用系统默认打印机
+- **macOS/Linux**: via `lpr`/`lp` (CUPS); requires an 80mm thermal printer configured with paper `Custom.80x180mm`
+- **Windows**: pure ctypes system print API (no pywin32), uses the default printer
 
-## 故障排查
+## Troubleshooting
 
-| 现象 | 处理 |
+| Symptom | Fix |
 |---|---|
-| 图表不生成 | 检查 `shots_data/` 是否有上传的 JSON;日志会打印错误 |
-| 打印没反应 | `echo test \| lp` 验证 CUPS;确认打印机纸张设为 80x180mm |
-| 历史数据丢了 | 检查 `shots_data/index.json` 是否存在(上传后自动写入) |
-| 更新后没变化 | 更新需要**重启服务器**才生效 |
-| 端口被占用 | `--port` 换端口 |
-| 网页空白 | 强制刷新(Cmd+Shift+R);F12 看控制台报错 |
+| Chart not generated | Check `shots_data/` for uploaded JSON; the log shows errors |
+| Print does nothing | `echo test \| lp` to verify CUPS; confirm paper is 80x180mm |
+| History missing | Check `shots_data/index.json` exists (written after each upload) |
+| Update has no effect | Updates require **restarting the server** |
+| Port in use | Use `--port` to change it |
+| Blank web page | Hard refresh (Cmd+Shift+R); check the console (F12) |
 
-## 许可
+## License
 
-GPLv3(与原版一致);内置字体 Noto Sans CJK 为 SIL Open Font License 1.1,可自由再分发。
+GPLv3 (same as v1.6); the bundled Noto Sans CJK font is SIL Open Font License 1.1 — freely redistributable.

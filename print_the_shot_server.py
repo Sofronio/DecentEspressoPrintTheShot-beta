@@ -313,11 +313,11 @@ LANGUAGES = {
     },
 }
 
-current_language = "zh"
+current_language = "en"   # 默认英文,可在网页右上角切换
 
 
 def get_text(key):
-    return LANGUAGES.get(current_language, LANGUAGES["zh"]).get(key, key)
+    return LANGUAGES.get(current_language, LANGUAGES["en"]).get(key, key)
 
 
 def is_windows():

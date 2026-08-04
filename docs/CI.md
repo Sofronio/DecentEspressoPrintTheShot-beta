@@ -1,47 +1,49 @@
-# CI 构建与发布说明
+# CI Build & Release Notes
 
-本项目的三平台构建由 GitHub Actions 自动完成。公开仓库的 Actions **完全免费**。
+[中文](CI_zh.md) | English
 
-## 触发方式
+The three-platform builds are automated by GitHub Actions. **Completely free for public repositories.**
 
-- 推送 `v*` tag(如 `v2.0-beta.1`)→ 自动构建三平台并发布到 Releases
-- 手动触发:Actions 页面 → Build PrintTheShot Beta → Run workflow
+## Triggers
+
+- Pushing a `v*` tag (e.g. `v2.0-beta.1`) → builds all three platforms and publishes a Release
+- Manual: Actions page → Build PrintTheShot Beta → Run workflow
 
 ```bash
 git tag v2.0-beta.2 && git push origin v2.0-beta.2
 ```
 
-## 流水线结构(`.github/workflows/build.yml`)
+## Pipeline (`.github/workflows/build.yml`)
 
 ```
 build (matrix: ubuntu/macos/windows)
   ├─ checkout + setup-python 3.11
-  ├─ 执行对应平台的 scripts/build_*.sh / build_windows.bat
-  └─ 上传产物 artifact(缺失即失败)
-release (needs: build, 仅 tag 触发)
-  ├─ 下载三个平台的 artifact
-  ├─ 显式重命名:
-  │    PrintTheShot-linux          (Linux 裸二进制)
-  │    PrintTheShot-macos.zip      (macOS .app 压缩包)
+  ├─ run the platform's scripts/build_*.sh / build_windows.bat
+  └─ upload artifact (missing files → job fails)
+release (needs: build, tags only)
+  ├─ download the three platform artifacts
+  ├─ rename explicitly:
+  │    PrintTheShot-linux          (Linux raw binary)
+  │    PrintTheShot-macos.zip      (macOS .app archive)
   │    PrintTheShot-windows-x64.exe(Windows)
-  └─ 发布到 GitHub Release
+  └─ publish to GitHub Release
 ```
 
-## 踩坑记录(重要)
+## Pitfalls (all encountered for real)
 
-### 1. Windows:裸 `pip` 在 venv 中自升级会报错
+### 1. Windows: bare `pip` cannot upgrade itself inside a venv
 
-**现象**:`pip install --upgrade pip` 报 `ERROR: To modify pip, please run the following command: ... python -m pip`。
+**Symptom**: `pip install --upgrade pip` fails with `ERROR: To modify pip, please run the following command: ... python -m pip`.
 
-**原因**:Windows 上 venv 的 `pip.exe` 无法修改自身(文件占用)。
+**Cause**: on Windows, the venv's `pip.exe` cannot modify itself (file lock).
 
-**修复**:bat 中一律使用 `python -m pip install ...`。
+**Fix**: always use `python -m pip install ...` in the bat.
 
-### 2. Windows:bat 没有错误检查 → "假成功"
+### 2. Windows: bat without error checks → "false success"
 
-**现象**:pip 安装失败后 bat 继续执行,最后一条 `echo` 成功退出码 0,整个 job 显示 ✓,但产物为空。
+**Symptom**: pip install fails, but the bat keeps going and the last `echo` returns 0 — the job shows ✓ while the artifact is empty.
 
-**修复**:每步 `if errorlevel 1 exit /b 1`,最后校验产物存在:
+**Fix**: check `errorlevel` after every step and verify the artifact exists:
 
 ```bat
 python -m pip install --quiet -r scripts\requirements.txt pyinstaller
@@ -51,43 +53,43 @@ if errorlevel 1 exit /b 1
 if not exist dist\PrintTheShot.exe (echo ERROR & exit /b 1)
 ```
 
-> 通用原则:构建脚本必须让失败**显式暴露**,不能静默返回 0。
+> General rule: build scripts must surface failures explicitly — never silently return 0.
 
-### 3. Release:多个 job 发布同名文件互相覆盖
+### 3. Release: multiple jobs publishing same-named files overwrite each other
 
-**现象**:三个平台的构建产物都叫 `PrintTheShot`(PyInstaller 默认名),每个 job 各自调用 `softprops/action-gh-release` 发布,先到的被后到的覆盖,Release 只剩一个文件。
+**Symptom**: all three platforms produce a binary named `PrintTheShot` (PyInstaller default); each job calls `softprops/action-gh-release` independently, later runs overwrite earlier ones, and the Release ends up with one file.
 
-**修复**:构建 job **不做发布**;单独一个 `release` job 依赖所有构建,下载 artifact 后**显式重命名**再发布(见流水线结构)。
+**Fix**: build jobs do **not** publish; a separate `release` job depends on all builds, downloads artifacts, **renames explicitly**, then publishes (see pipeline above).
 
-### 4. Release:.app 目录结构被拍平,漏出 `Info.plist`
+### 4. Release: `.app` directory flattened, leaking `Info.plist`
 
-**现象**:`download-artifact` 加 `merge-multiple: true` 后,`.app` 包里的 `Contents/Info.plist`、`MacOS/PrintTheShot` 被当作独立资产发布。
+**Symptom**: with `download-artifact` + `merge-multiple: true`, files inside `PrintTheShot.app/Contents/` (Info.plist, MacOS/PrintTheShot) get published as standalone assets.
 
-**修复**:
-- macOS 构建脚本把 `.app` 打成 zip(`zip -rq PrintTheShot-macos.zip PrintTheShot.app`)——这也是 macOS 应用分发的标准形态
-- release job 不用 `merge-multiple`,按 artifact 目录精确拷贝
+**Fix**:
+- The macOS build script zips the `.app` (`zip -rq PrintTheShot-macos.zip PrintTheShot.app`) — the standard distribution form for macOS apps
+- The release job does **not** use `merge-multiple`; it copies from each artifact directory precisely
 
-### 5. 上传产物用 `if-no-files-found: error`
+### 5. Upload artifacts with `if-no-files-found: error`
 
-产物缺失说明构建失败,必须让 job 标红,而不是 `ignore` 静默跳过。
+Missing artifacts mean the build failed — the job must turn red, not silently skip.
 
-## 本地构建(调试用)
+## Local Builds (debugging)
 
-| 平台 | 命令 | 产物 |
+| Platform | Command | Output |
 |---|---|---|
 | macOS | `./scripts/build_macos.sh` | `dist/PrintTheShot` + `dist/PrintTheShot.app` + `dist/PrintTheShot-macos.zip` |
 | Linux | `./scripts/build_linux.sh` | `dist/PrintTheShot` |
 | Windows | `scripts\build_windows.bat` | `dist\PrintTheShot.exe` |
 
-注意事项:
+Notes:
 
-- PyInstaller **不能交叉编译**:必须在本平台构建(CI 的 matrix 天然满足)
-- spec(`scripts/print_the_shot.spec`)把 `fonts/` `web/` `plugin/` 作为 datas 打进包;这些目录**必须提交到 git**,否则 CI 构建缺文件
-- 打包版运行时从 `_MEIPASS` 读取字体/模板;插件会复制到 CWD/plugin(可写,支持更新)
+- PyInstaller **cannot cross-compile**: build on the target platform (the CI matrix does this natively)
+- The spec (`scripts/print_the_shot.spec`) bundles `fonts/` `web/` `plugin/` as datas — **these directories must be committed to git**, or CI builds will fail
+- Packaged builds read fonts/templates from `_MEIPASS`; the plugin is copied to CWD/plugin (writable, so updates work)
 
-## 发布后验证清单
+## Post-Release Checklist
 
-1. Actions 页面:3 个 build + 1 个 release 全部 ✓
-2. Release 资产恰好 3 个,命名正确(linux / macos.zip / windows.exe)
-3. 抽查:下载对应平台包,运行 `--render sample.json out.png` 验证图表渲染
-4. macOS 包解压后 `PrintTheShot.app` 可双击启动
+1. Actions page: 3 build jobs + 1 release job all ✓
+2. Release has exactly 3 assets with correct names (linux / macos.zip / windows.exe)
+3. Spot-check: download the package for your platform, run `--render sample.json out.png` to verify chart rendering
+4. macOS: unzip → `PrintTheShot.app` launches by double-click
