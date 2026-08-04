@@ -1733,22 +1733,21 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             shot_data = json.load(f)
 
         original_bean = shot_data.get("meta", {}).get("bean", {}).get("type", "未知")
-        # AI翻译:豆子信息按当前界面语言翻译(超时降级用原文,打印不受影响)
-        # AI translate: bean info into the current UI language (timeout falls back to original)
+        # 上传时仅用缓存/静态表翻译(不调AI API;主动翻译请用卡片🌐或大图chips)
+        # upload-time translation is cache/static-map only (no AI calls; use 🌐/chips for on-demand)
         lang = current_language
-        if settings.get("ai_enabled") and settings.get("deepseek_key") and lang in LANGUAGES:
+        if lang in LANGUAGES:
             bean_meta = shot_data.get("meta", {}).get("bean", {})
-            if bean_meta:
-                if lang != "zh" or not re.search("[一-鿿]", str(bean_meta.get("type", ""))):
-                    bean_meta = dict(bean_meta)
-                    bean_meta["type"] = clean_bean_text(ai_translate(str(bean_meta.get("type", "")), lang))
-                    bean_meta["notes"] = clean_bean_text(ai_translate(str(bean_meta.get("notes", "")), lang))
-                    if bean_meta.get("roast_level"):
-                        bean_meta["roast_level"] = clean_bean_text(ai_translate(str(bean_meta["roast_level"]), lang))
-                    shot_data.setdefault("meta", {})["bean"] = bean_meta
+            if bean_meta and (lang != "zh" or not re.search("[一-鿿]", str(bean_meta.get("type", "")))):
+                bean_meta = dict(bean_meta)
+                bean_meta["type"] = clean_bean_text(ai_translate(str(bean_meta.get("type", "")), lang, allow_api=False))
+                bean_meta["notes"] = clean_bean_text(ai_translate(str(bean_meta.get("notes", "")), lang, allow_api=False))
+                if bean_meta.get("roast_level"):
+                    bean_meta["roast_level"] = clean_bean_text(ai_translate(str(bean_meta["roast_level"]), lang, allow_api=False))
+                shot_data.setdefault("meta", {})["bean"] = bean_meta
             profile = dict(shot_data.get("profile", {}))
             if profile.get("title") and (lang != "zh" or not re.search("[一-鿿]", str(profile["title"]))):
-                profile["title"] = clean_bean_text(ai_translate(str(profile["title"]), lang))
+                profile["title"] = clean_bean_text(ai_translate(str(profile["title"]), lang, allow_api=False))
                 shot_data["profile"] = profile
 
         image_filename = filename.replace(".json", ".png")
