@@ -105,6 +105,16 @@ git tag v2.0-beta.1 && git push origin v2.0-beta.1
 
 公开仓库的 GitHub Actions **完全免费**,无需本地分发安装包。
 
+Release 资产命名(打 tag 后自动生成):
+
+| 文件 | 平台 | 说明 |
+|---|---|---|
+| `PrintTheShot-linux` | Linux | 命令行直接运行 |
+| `PrintTheShot-macos.zip` | macOS | 解压得到 .app,双击运行 |
+| `PrintTheShot-windows-x64.exe` | Windows | 双击运行 |
+
+> CI 说明:构建流水线见 `.github/workflows/build.yml`;Windows 构建必须用 `python -m pip`(裸 pip 在 venv 中自升级会报错),构建脚本对失败会显式退出非 0,任何平台的构建失败都会在 Actions 中直接标红。
+
 ## CLI 参数
 
 | 参数 | 说明 |

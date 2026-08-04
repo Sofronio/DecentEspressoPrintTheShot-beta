@@ -48,10 +48,10 @@ jobs:
           path: |
             dist/PrintTheShot
             dist/PrintTheShot.exe
-            dist/PrintTheShot.app
+            dist/PrintTheShot-macos.zip
           if-no-files-found: error   # 构建失败必须显式暴露
 
-  # 独立 release job:汇总三平台产物,避免同名覆盖
+  # 独立 release job:按平台显式命名汇总,避免同名覆盖/目录拍平
   release:
     if: startsWith(github.ref, 'refs/tags/')
     needs: build
@@ -60,11 +60,15 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-          merge-multiple: true
 
-      - name: List artifacts
-        run: ls -la artifacts/
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          cp artifacts/PrintTheShot-linux-x64/PrintTheShot release/PrintTheShot-linux
+          cp artifacts/PrintTheShot-macos/PrintTheShot-macos.zip release/PrintTheShot-macos.zip
+          cp artifacts/PrintTheShot-windows-x64.exe/PrintTheShot.exe release/PrintTheShot-windows-x64.exe
+          ls -la release/
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**
+          files: release/*

@@ -39,5 +39,7 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 </plist>
 EOF
 chmod +x "$APP/Contents/MacOS/PrintTheShot"
-echo "✅ 应用包: $APP"
+# 打包 .app 为 zip(发布标准形态,避免目录结构在CI汇总时被拍平)
+cd dist && zip -rq PrintTheShot-macos.zip PrintTheShot.app && cd ..
+echo "✅ 应用包: $APP → dist/PrintTheShot-macos.zip"
 deactivate
