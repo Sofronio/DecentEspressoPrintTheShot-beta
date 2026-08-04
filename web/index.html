@@ -202,6 +202,7 @@
   <span class="close">✕</span>
   <div class="lb-wrap" onclick="event.stopPropagation()">
     <img id="lightbox-img" alt="large chart">
+    <div class="lb-langs" id="lb-langs" style="display:flex;gap:6px;flex-wrap:wrap"></div>
     <div class="lb-actions">
       <button class="btn" id="lb-print" onclick="printLightbox()" title="🖨️">🖨️</button>
       <a class="btn gray" id="lb-json" download title="JSON">📄</a>
@@ -451,12 +452,14 @@ async function loadShots() {
   const slice = d.shots.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
 
   const grid = document.getElementById('shot-grid');
+  window.chartLangs = window.chartLangs || {};
+  slice.forEach(s => { if (s.chart_lang) window.chartLangs[s.filename] = s.chart_lang; });
   if (!slice.length) { grid.innerHTML = `<div class="empty" style="grid-column:1/-1">${T('no_data')}</div>`; }
   else {
     grid.innerHTML = slice.map(s => {
       const png = s.filename.replace('.json', '.png');
       const img = s.image_exists
-        ? `<img data-fn="${s.filename}" src="/images/${png}" loading="lazy" title="${T('view_large')}" onclick="viewImage('${s.filename}')">`
+        ? `<img data-fn="${s.filename}" src="/images/${png}?l=${currentLang}" loading="lazy" title="${T('view_large')}" onclick="viewImage('${s.filename}')">`
         : `<div class="empty">⚠️ chart failed</div>`;
       return `<div class="shot">${img}
         <div class="meta"><b>${(s.bean ? s.bean + ' - ' : '') + (s.profile || '?')}</b>${s.machine_id} · ${s.timestamp} · ${(s.data_size/1024).toFixed(1)}KB</div>
@@ -586,7 +589,25 @@ function viewImage(filename) {
   document.getElementById('lightbox-img').src = '/images/' + png + '?t=' + Date.now();  // 缓存破坏,确保显示最新图
   document.getElementById('lb-json').href = '/download/json/' + filename;
   document.getElementById('lb-png').href = '/images/' + png + '?t=' + Date.now();
+  // 语言chips:切换大图到缓存的其它语言版本 / language chips: switch to cached versions
+  const langs = L.__languages || [{code:'en',name:'English'},{code:'zh',name:'中文'}];
+  const cur = (window.chartLangs || {})[filename] || '';
+  document.getElementById('lb-langs').innerHTML = langs.map(l =>
+    `<button class="btn gray" style="padding:3px 10px;font-size:12px${l.code === cur ? ';background:var(--accent);color:#fff' : ''}"
+      onclick="switchLightboxLang('${l.code}')">${l.name}</button>`).join('');
   document.getElementById('lightbox').classList.add('show');
+}
+
+// 大图切换语言版本(仅用缓存翻译,不发AI请求) / switch the large view to a cached language version
+async function switchLightboxLang(lang) {
+  if (!lightboxFilename) return;
+  const r = await api('/api/translate/shot', { method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({filename: lightboxFilename, lang: lang, allow_api: false}) })
+    .catch(e => ({ success: false, message: String(e) }));
+  if (!r.success) { toast('❌ ' + (r.message || '')); return; }
+  window.chartLangs = window.chartLangs || {};
+  window.chartLangs[lightboxFilename] = lang;
+  viewImage(lightboxFilename);  // 刷新图片 + chips高亮
 }
 
 function closeLightbox() {

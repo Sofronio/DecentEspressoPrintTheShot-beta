@@ -364,13 +364,23 @@ BEAN_TRANSLATIONS = {
 
 
 def display_name(name, mapping):
-    """按当前界面语言翻译名称;未知名称原样返回 / translate a name for the current UI language"""
+    """按当前界面语言翻译名称;静态表 + AI翻译缓存;未知名称原样返回
+    Translate a name for the current UI language: static map first, then the AI translation cache"""
     if not name:
         return name
     if current_language == "en":
-        return mapping.get(name, name)
-    rev = {v: k for k, v in mapping.items()}
-    return rev.get(name, name)
+        t = mapping.get(name)
+        if t:
+            return t
+    elif current_language == "zh":
+        t = {v: k for k, v in mapping.items()}.get(name)
+        if t:
+            return t
+    # 自定义语言或静态表未命中:查AI翻译缓存(仅显示,不改记录)
+    cached = translation_cache.get(current_language, {}).get(name)
+    if cached:
+        return cached
+    return name
 
 
 def get_text(key):
@@ -466,9 +476,10 @@ def clean_bean_text(text):
     return t.strip()
 
 
-def ai_translate(text, target_lang):
+def ai_translate(text, target_lang, allow_api=True):
     """把豆子信息翻译成目标语言;缓存优先,静态表快速路径,失败返回原文
-    Translate bean info into the target language: cache first, static-map fast path, original on failure"""
+    Translate bean info into the target language: cache first, static-map fast path, original on failure.
+    allow_api=False 时只查缓存/静态表(视图语言切换用,避免API风暴)"""
     if not text or not text.strip():
         return text
     # 静态表快速路径(演示豆子直接命中,不花token)
@@ -484,7 +495,7 @@ def ai_translate(text, target_lang):
     cached = translation_cache.get(target_lang, {}).get(text)
     if cached:
         return cached
-    if not settings.get("deepseek_key") or not settings.get("ai_enabled"):
+    if not allow_api or not settings.get("deepseek_key") or not settings.get("ai_enabled"):
         return text
     # 用语言显示名而非内部代码(如 Français 而不是 lang1),AI才能正确理解
     # use the display name (e.g. Français) instead of the internal code (lang1)
@@ -493,7 +504,8 @@ def ai_translate(text, target_lang):
     try:
         out = ai_call([
             {"role": "system",
-             "content": f"You translate coffee bean info (origin, processing, flavor notes) into {lang_name}. "
+             "content": f"You translate the following coffee-related text into {lang_name}: "
+                        f"1) brew profile names, 2) bean origin/processing, 3) flavor notes, 4) roast levels. "
                         f"Keep brand names, farm names and technical terms intact. Be CONCISE and abbreviate where "
                         f"natural (the text must fit a narrow chart column). Return ONLY the translation."},
             {"role": "user", "content": text},
@@ -505,6 +517,24 @@ def ai_translate(text, target_lang):
     except Exception as e:
         print(f"⚠️ AI 翻译失败(使用原文): {e}")
         return text  # 降级:原文,打印不受影响 / fallback: original text
+
+
+def rerender_shot_in_lang(shot_data, image_path, machine_id, target_lang, allow_api=True):
+    """把一条shot按目标语言重渲染(豆子信息翻译进图表),返回渲染结果
+    Re-render a shot in the target language (bean info translated into the chart)"""
+    profile = dict(shot_data.get("profile", {}))
+    if profile.get("title"):
+        profile["title"] = clean_bean_text(ai_translate(str(profile["title"]), target_lang, allow_api))
+        shot_data["profile"] = profile
+    bean_meta = shot_data.get("meta", {}).get("bean", {}) or {}
+    if bean_meta:
+        bean_meta = dict(bean_meta)
+        bean_meta["type"] = clean_bean_text(ai_translate(str(bean_meta.get("type", "")), target_lang, allow_api))
+        bean_meta["notes"] = clean_bean_text(ai_translate(str(bean_meta.get("notes", "")), target_lang, allow_api))
+        if bean_meta.get("roast_level"):
+            bean_meta["roast_level"] = clean_bean_text(ai_translate(str(bean_meta["roast_level"]), target_lang, allow_api))
+        shot_data.setdefault("meta", {})["bean"] = bean_meta
+    return render_chart(shot_data, image_path, machine_id, target_lang)
 
 
 def is_windows():
@@ -1329,6 +1359,28 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
         for s in shots:
             s["bean"] = display_name(s.get("bean", ""), BEAN_TRANSLATIONS)
             s["profile"] = display_name(s.get("profile", ""), PROFILE_TRANSLATIONS)
+        # 图表语言与界面不一致的,后台重渲染可见页(仅用缓存翻译,不发API)
+        # re-render the visible page when the chart language differs from the UI (cache-only)
+        stale = [s for s in shots if s.get("chart_lang") != current_language][:36]
+        if stale:
+            def _refresh():
+                for s in stale:
+                    try:
+                        fp = os.path.join(DATA_DIR, s["filename"])
+                        if not os.path.exists(fp):
+                            continue
+                        with open(fp, "r", encoding="utf-8") as f:
+                            d = json.load(f)
+                        ok = rerender_shot_in_lang(d, os.path.join(IMAGE_DIR, s["filename"].replace(".json", ".png")),
+                                                   s.get("machine_id", "UNKNOWN"), current_language, allow_api=False)
+                        with shots_lock:
+                            for it in received_shots:
+                                if it.get("filename") == s["filename"]:
+                                    it["chart_lang"] = current_language if ok else it.get("chart_lang", "")
+                        persist_index()
+                    except Exception:
+                        pass
+            threading.Thread(target=_refresh, daemon=True).start()
         self._send_json({"shots": shots, "dates": dates_fmt})
 
     def send_stats(self):
@@ -1535,19 +1587,16 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
                 return
             with open(filepath, "r", encoding="utf-8") as f:
                 shot_data = json.load(f)
-            bean_meta = shot_data.get("meta", {}).get("bean", {}) or {}
-            if bean_meta:
-                bean_meta = dict(bean_meta)
-                bean_meta["type"] = clean_bean_text(ai_translate(str(bean_meta.get("type", "")), target_lang))
-                bean_meta["notes"] = clean_bean_text(ai_translate(str(bean_meta.get("notes", "")), target_lang))
-                shot_data.setdefault("meta", {})["bean"] = bean_meta
             image_path = os.path.join(IMAGE_DIR, filename.replace(".json", ".png"))
-            ok = render_chart(shot_data, image_path, data.get("machine_id", "UNKNOWN"), target_lang)
-            new_bean = bean_meta.get("type", "未知") if bean_meta else "未知"
+            allow_api = data.get("allow_api", True)  # 大图语言切换仅用缓存 / lightbox switching uses cache only
+            ok = rerender_shot_in_lang(shot_data, image_path, data.get("machine_id", "UNKNOWN"),
+                                       target_lang, allow_api=allow_api)
+            # 记录保持原始语言,卡片标题由显示层按当前语言翻译(见display_name)
+            # records keep the original language; card titles are localized at display time
             with shots_lock:
                 for s in received_shots:
                     if s.get("filename") == filename:
-                        s["bean"] = new_bean
+                        s["chart_lang"] = target_lang if ok else s.get("chart_lang", "")
             persist_index()
             msg = "translated & re-rendered" if ok else "render failed"
             self._send_json({"success": ok, "message": msg})
@@ -1683,6 +1732,7 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
         with open(filepath, "r", encoding="utf-8") as f:
             shot_data = json.load(f)
 
+        original_bean = shot_data.get("meta", {}).get("bean", {}).get("type", "未知")
         # AI翻译:豆子信息按当前界面语言翻译(超时降级用原文,打印不受影响)
         # AI translate: bean info into the current UI language (timeout falls back to original)
         lang = current_language
@@ -1690,18 +1740,23 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             bean_meta = shot_data.get("meta", {}).get("bean", {})
             if bean_meta:
                 if lang != "zh" or not re.search("[一-鿿]", str(bean_meta.get("type", ""))):
-                    translated_type = ai_translate(str(bean_meta.get("type", "")), lang)
-                    translated_notes = ai_translate(str(bean_meta.get("notes", "")), lang)
                     bean_meta = dict(bean_meta)
-                    bean_meta["type"] = translated_type
-                    bean_meta["notes"] = translated_notes
+                    bean_meta["type"] = clean_bean_text(ai_translate(str(bean_meta.get("type", "")), lang))
+                    bean_meta["notes"] = clean_bean_text(ai_translate(str(bean_meta.get("notes", "")), lang))
+                    if bean_meta.get("roast_level"):
+                        bean_meta["roast_level"] = clean_bean_text(ai_translate(str(bean_meta["roast_level"]), lang))
                     shot_data.setdefault("meta", {})["bean"] = bean_meta
+            profile = dict(shot_data.get("profile", {}))
+            if profile.get("title") and (lang != "zh" or not re.search("[一-鿿]", str(profile["title"]))):
+                profile["title"] = clean_bean_text(ai_translate(str(profile["title"]), lang))
+                shot_data["profile"] = profile
 
         image_filename = filename.replace(".json", ".png")
         image_path = os.path.join(IMAGE_DIR, image_filename)
         ok = render_chart(shot_data, image_path, machine_id, current_language)
 
         shot_info = {
+            "chart_lang": current_language if ok else "",
             "id": shot_id,
             "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
             "filename": filename,
@@ -1710,7 +1765,7 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             "profile": shot_data.get("profile", {}).get("title", "unknown"),
             "machine_id": machine_id,
             "image_exists": ok,
-            "bean": shot_data.get("meta", {}).get("bean", {}).get("type", "未知"),
+            "bean": original_bean,  # 记录存原始语言,显示层翻译 / record keeps the original; display translates
         }
         with shots_lock:
             received_shots.append(shot_info)
@@ -1777,6 +1832,7 @@ def load_history():
                 "id": 0, "timestamp": timestamp, "filename": fn,
                 "data_size": data_size, "clock": clock,
                 "profile": profile, "machine_id": "UNKNOWN",
+                "chart_lang": "",  # 未知:首次查看按界面语言重渲染
                 "image_exists": os.path.exists(
                     os.path.join(IMAGE_DIR, fn.replace(".json", ".png"))),
                 "bean": bean,
