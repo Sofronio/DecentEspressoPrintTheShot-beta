@@ -184,10 +184,10 @@
       <span id="lang-list" style="display:flex;gap:6px;flex-wrap:wrap"></span>
     </div>
     <div class="ai-row">
-      <input id="lang-code" placeholder="ja" maxlength="5" style="width:70px">
-      <input id="lang-name" placeholder="日本語">
+      <input id="lang-name" placeholder="日本語 / Japanese / 日语">
       <button class="btn" id="btn-add-lang" onclick="addLanguage()"></button>
     </div>
+    <div class="ai-row" style="flex-wrap:wrap" id="lang-presets"></div>
     <div class="note" id="ai-note"></div>
   </div>
 </div>
@@ -253,13 +253,36 @@ async function loadLanguages() {
   ).join('');
 }
 
+// 常用语言预设 / common language presets
+const LANG_PRESETS = ['日本語', '한국어', 'Français', 'Deutsch', 'Español', 'Italiano',
+                      'Português', 'Русский', 'العربية', 'ไทย', 'Tiếng Việt', 'Türkçe'];
+
+function initLangPresets() {
+  document.getElementById('lang-presets').innerHTML = LANG_PRESETS.map(n =>
+    `<button class="btn gray" style="padding:3px 10px;font-size:12px" onclick="document.getElementById('lang-name').value='${n}'">${n}</button>`).join('');
+}
+
 async function addLanguage() {
-  const code = document.getElementById('lang-code').value.trim().toLowerCase();
   const name = document.getElementById('lang-name').value.trim();
-  if (!code || !name) { toast('❌ ' + (L.ai_lang_hint || 'code + name required')); return; }
-  const r = await api('/api/languages', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({code: code, name: name}) });
+  if (!name) { toast('❌ ' + (L.ai_lang_hint || 'language name required')); return; }
+  const r = await api('/api/languages', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name: name}) });
   toast((r.success ? '✅ ' : '❌ ') + (r.message || ''));
-  if (r.success) { document.getElementById('lang-code').value = ''; document.getElementById('lang-name').value = ''; location.reload(); }
+  if (r.success) { document.getElementById('lang-name').value = ''; location.reload(); }
+}
+
+// 翻译当前曲线内容(豆子信息→当前语言,重渲染) / translate this shot's chart content
+async function translateShot(filename) {
+  const r = await api('/api/translate/shot', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({filename: filename}) })
+    .catch(e => ({ success: false, message: String(e) }));
+  toast((r.success ? '🌐 ' : '❌ ') + (r.message || ''));
+  if (r.success) {
+    // 刷新该卡片图片(加缓存破坏参数) / refresh the card image with cache-buster
+    const png = filename.replace('.json', '.png');
+    document.querySelectorAll(`img[data-fn="${filename}"]`).forEach(i => {
+      i.src = '/images/' + png + '?t=' + Date.now();
+    });
+    loadShots();
+  }
 }
 
 async function deleteLanguage(code) {
@@ -350,14 +373,15 @@ async function loadShots() {
     grid.innerHTML = slice.map(s => {
       const png = s.filename.replace('.json', '.png');
       const img = s.image_exists
-        ? `<img src="/images/${png}" loading="lazy" title="${T('view_large')}" onclick="viewImage('${s.filename}')">`
+        ? `<img data-fn="${s.filename}" src="/images/${png}" loading="lazy" title="${T('view_large')}" onclick="viewImage('${s.filename}')">`
         : `<div class="empty">⚠️ chart failed</div>`;
       return `<div class="shot">${img}
         <div class="meta"><b>${(s.bean ? s.bean + ' - ' : '') + (s.profile || '?')}</b>${s.machine_id} · ${s.timestamp} · ${(s.data_size/1024).toFixed(1)}KB</div>
         <div class="actions">
-          <button class="btn" onclick="printShot('${s.filename}')">🖨️ ${T('print')}</button>
-          <a class="btn gray" href="/download/json/${s.filename}" download>⬇ JSON</a>
-          <a class="btn gray" href="/images/${png}" download>⬇ PNG</a>
+          <button class="btn" onclick="printShot('${s.filename}')" title="${T('print')}">🖨️</button>
+          <a class="btn gray" href="/download/json/${s.filename}" download title="JSON">📄</a>
+          <a class="btn gray" href="/images/${png}" download title="PNG">🖼️</a>
+          <button class="btn gray" onclick="translateShot('${s.filename}')" title="${T('btn_translate')}">🌐</button>
         </div>
       </div>`;
     }).join('');
@@ -554,7 +578,7 @@ async function uploadFile(file) {
 
 // 初始化文案
 function initText() {
-  document.getElementById('title').textContent = T('server_title').replace('{VERSION}', '');
+  document.getElementById('title').textContent = T('server_title').replace('{VERSION}', L.__version || '');
   document.getElementById('h-status').textContent = '📊 ' + T('print_control');
   document.getElementById('h-queue').textContent = T('print_queue');
   document.getElementById('h-upload').textContent = '📤 ' + T('data_upload');
@@ -586,6 +610,7 @@ function initText() {
 
 initText();
 initLangSwitcher();
+initLangPresets();
 loadAiSettings();
 refreshAll();
 setInterval(refreshAll, 8000);

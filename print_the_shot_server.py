@@ -225,7 +225,9 @@ LANGUAGES = {
         "ai_key_hint": "enter API key",
         "ai_key_saved": "API key saved",
         "ai_toggled": "AI translation setting saved",
-        "ai_lang_hint": "language code + name required",
+        "ai_lang_hint": "language name required",
+        "btn_translate": "Translate this chart with AI",
+        "translate_done": "Translated and re-rendered",
         "update_title": "Service Update",
         "btn_check_update": "Check for updates",
         "btn_update_service": "Update service from GitHub (auto backup)",
@@ -322,7 +324,9 @@ LANGUAGES = {
         "ai_key_hint": "请输入 API Key",
         "ai_key_saved": "API Key 已保存",
         "ai_toggled": "AI 翻译设置已保存",
-        "ai_lang_hint": "需要语言代码和名称",
+        "ai_lang_hint": "请输入语言名称",
+        "btn_translate": "AI 翻译本条曲线",
+        "translate_done": "已翻译并重新渲染",
         "update_title": "服务更新",
         "btn_check_update": "检查更新",
         "btn_update_service": "从 GitHub 更新服务(自动备份)",
@@ -439,6 +443,20 @@ def ai_call(messages, timeout=AI_TIMEOUT):
     return resp["choices"][0]["message"]["content"].strip()
 
 
+def clean_bean_text(text):
+    """清理豆子信息文本:去掉连字符/间隔符等无效信息,保留数字连字符与单词内连字符
+    Clean bean-info text: strip hyphens/separators, keep numeric & word-internal hyphens"""
+    if not text:
+        return text
+    t = str(text)
+    t = t.replace("·", ", ").replace("–", ", ").replace("—", ", ")
+    t = re.sub(r"\s*-\s*", ", ", t)          # 两侧有空格的连字符 → 逗号
+    t = re.sub(r"([一-鿿])\s*-\s*([一-鿿])", r"\1,\2", t)  # 中文间连字符 → 逗号
+    t = re.sub(r"\s+", " ", t)
+    t = re.sub(r"^[,，;；\s]+|[,，;；\s]+$", "", t)
+    return t.strip()
+
+
 def ai_translate(text, target_lang):
     """把豆子信息翻译成目标语言;缓存优先,静态表快速路径,失败返回原文
     Translate bean info into the target language: cache first, static-map fast path, original on failure"""
@@ -466,6 +484,7 @@ def ai_translate(text, target_lang):
                         f"Keep brand names, farm names and technical terms intact. Return ONLY the translation."},
             {"role": "user", "content": text},
         ], timeout=AI_TIMEOUT)
+        out = clean_bean_text(out)  # 去掉连字符等无效信息 / strip hyphens & stray separators
         translation_cache.setdefault(target_lang, {})[text] = out
         save_translation_cache()
         return out
@@ -1167,6 +1186,8 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             self.add_language()
         elif path == "/api/languages/delete":
             self.delete_language()
+        elif path == "/api/translate/shot":
+            self.handle_translate_shot()
         else:
             self.send_error(404, "Endpoint not found")
 
@@ -1190,6 +1211,7 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             # 附带当前语言码与可用语言列表(供切换器动态渲染)
             # attach current code + available languages for the switcher
             lang_json["__code"] = current_language
+            lang_json["__version"] = VERSION
             lang_json["__languages"] = [{"code": "en", "name": "English"}, {"code": "zh", "name": "中文"}] + [
                 {"code": c, "name": i.get("name", c)}
                 for c, i in settings.get("languages", {}).items()]
@@ -1387,26 +1409,29 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
         self._send_json({"languages": langs})
 
     def add_language(self):
-        """POST /api/languages {code, name} — 用DeepSeek把UI文案翻译成新语言并启用
-        Add a custom language: translate all UI strings via DeepSeek and activate it"""
+        """POST /api/languages {name} — 用DeepSeek把UI文案翻译成新语言并启用(代码自动生成)
+        Add a custom language by plain-text name: translate all UI strings via DeepSeek"""
         global settings
         try:
             length = int(self.headers.get("Content-Length", 0))
             data = json.loads(self.rfile.read(length).decode("utf-8"))
-            code = data.get("code", "").strip().lower()
             name = data.get("name", "").strip()
-            if not re.match(r"^[a-z]{2,5}$", code):
-                self._send_json({"success": False, "message": "language code must be 2-5 lowercase letters"})
+            if not name:
+                self._send_json({"success": False, "message": "language name required"})
                 return
-            if code in ("en", "zh"):
-                self._send_json({"success": False, "message": f"{code} is a built-in language"})
-                return
+            # 代码自动生成(内部使用,用户无需关心) / auto-generate internal code
+            code = data.get("code", "").strip().lower()
+            if not code or not re.match(r"^[a-z0-9]{2,8}$", code) or code in ("en", "zh"):
+                n = 1
+                while f"lang{n}" in settings.get("languages", {}) or f"lang{n}" in ("en", "zh"):
+                    n += 1
+                code = f"lang{n}"
             if not settings.get("deepseek_key"):
                 self._send_json({"success": False, "message": "DeepSeek API key required first"})
                 return
-            # 批量翻译EN文案 → JSON
+            # 批量翻译EN文案 → JSON(AI理解语言名称,任意写法均可)
             prompt = ("Translate the following JSON object of UI strings into " + name +
-                      " (" + code + "). Keep {placeholders} intact. "
+                      ". Keep {placeholders} intact. "
                       "Return ONLY valid JSON with the same keys.")
             out = ai_call([{"role": "system", "content": prompt},
                            {"role": "user", "content": json.dumps(LANGUAGES["en"], ensure_ascii=False)}],
@@ -1421,6 +1446,42 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
                              "strings_count": len(strings)})
         except Exception as e:
             self._send_json({"success": False, "message": f"add language failed: {e}"}, 500)
+
+    def handle_translate_shot(self):
+        """POST /api/translate/shot {filename} — 用DeepSeek翻译该条豆子信息并重渲染图表
+        Translate a shot's bean info via DeepSeek and re-render its chart"""
+        global current_language
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+            filename = data.get("filename", "")
+            filepath = os.path.join(DATA_DIR, filename)
+            if not os.path.exists(filepath):
+                self._send_json({"success": False, "message": "shot not found"})
+                return
+            if not settings.get("deepseek_key") or not settings.get("ai_enabled"):
+                self._send_json({"success": False, "message": "AI translation not enabled"})
+                return
+            with open(filepath, "r", encoding="utf-8") as f:
+                shot_data = json.load(f)
+            bean_meta = shot_data.get("meta", {}).get("bean", {}) or {}
+            if bean_meta:
+                bean_meta = dict(bean_meta)
+                bean_meta["type"] = clean_bean_text(ai_translate(str(bean_meta.get("type", "")), current_language))
+                bean_meta["notes"] = clean_bean_text(ai_translate(str(bean_meta.get("notes", "")), current_language))
+                shot_data.setdefault("meta", {})["bean"] = bean_meta
+            image_path = os.path.join(IMAGE_DIR, filename.replace(".json", ".png"))
+            ok = render_chart(shot_data, image_path, data.get("machine_id", "UNKNOWN"), current_language)
+            new_bean = bean_meta.get("type", "未知") if bean_meta else "未知"
+            with shots_lock:
+                for s in received_shots:
+                    if s.get("filename") == filename:
+                        s["bean"] = new_bean
+            persist_index()
+            msg = "translated & re-rendered" if ok else "render failed"
+            self._send_json({"success": ok, "message": msg})
+        except Exception as e:
+            self._send_json({"success": False, "message": str(e)}, 500)
 
     def delete_language(self):
         """DELETE /api/languages/delete {code} — 移除自定义语言"""
