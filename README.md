@@ -113,7 +113,7 @@ Release 资产命名(打 tag 后自动生成):
 | `PrintTheShot-macos.zip` | macOS | 解压得到 .app,双击运行 |
 | `PrintTheShot-windows-x64.exe` | Windows | 双击运行 |
 
-> CI 说明:构建流水线见 `.github/workflows/build.yml`;Windows 构建必须用 `python -m pip`(裸 pip 在 venv 中自升级会报错),构建脚本对失败会显式退出非 0,任何平台的构建失败都会在 Actions 中直接标红。
+> CI 说明:构建流水线见 `.github/workflows/build.yml`,完整踩坑记录与发布验证清单见 [docs/CI.md](docs/CI.md)。要点:Windows 构建必须用 `python -m pip`;构建失败会显式标红;Release 按平台命名,不会互相覆盖。
 
 ## CLI 参数
 
