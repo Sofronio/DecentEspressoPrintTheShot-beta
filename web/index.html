@@ -82,9 +82,11 @@
     <div class="sub" id="subtitle"></div>
   </div>
   <div class="lang-switch" id="lang-switch"></div>
+  <button class="btn gray" id="btn-settings" onclick="showSettings()" title="⚙" style="margin-left:10px">⚙</button>
 </header>
 
 <main>
+<div id="main-view">
   <!-- 状态 / Status -->
   <div class="card">
     <h2 id="h-status"></h2>
@@ -94,31 +96,6 @@
       <button class="btn" id="btn-bean" onclick="toggleBean()"></button>
       <button class="btn gray" onclick="refreshAll()" id="btn-refresh"></button>
     </div>
-  </div>
-
-  <!-- 设置:AI翻译 + 语言管理 / Settings: AI translation + languages -->
-  <div class="card">
-    <h2 id="h-ai-settings"></h2>
-    <div class="ai-row">
-      <input type="password" id="ai-key" placeholder="sk-..." autocomplete="off">
-      <button class="btn" id="btn-save-key" onclick="saveAiKey()"></button>
-      <button class="btn gray" id="btn-ai-balance" onclick="checkBalance()"></button>
-      <span id="ai-balance" style="font-size:13px;color:var(--muted)"></span>
-    </div>
-    <div class="ai-row">
-      <label><input type="checkbox" id="ai-enabled" onchange="toggleAi()">
-        <span id="ai-enabled-label" style="font-size:13px;color:#555"></span></label>
-    </div>
-    <div class="ai-row" style="flex-wrap:wrap">
-      <span id="h-languages" style="font-size:13px;color:#555"></span>
-      <span id="lang-list" style="display:flex;gap:6px;flex-wrap:wrap"></span>
-    </div>
-    <div class="ai-row">
-      <input id="lang-code" placeholder="ja" maxlength="5" style="width:70px">
-      <input id="lang-name" placeholder="日本語">
-      <button class="btn" id="btn-add-lang" onclick="addLanguage()"></button>
-    </div>
-    <div class="note" id="ai-note"></div>
   </div>
 
   <!-- 打印队列 / Print queue -->
@@ -186,6 +163,34 @@
     </p>
     <div class="note" id="update-note"></div>
   </div>
+</div><!-- /main-view -->
+
+<!-- 设置二级页 / Settings sub-page -->
+<div id="settings-view" style="display:none">
+  <div class="card">
+    <h2><span id="h-ai-settings"></span><button class="btn gray" id="btn-back" onclick="hideSettings()">←</button></h2>
+    <div class="ai-row">
+      <input type="password" id="ai-key" placeholder="sk-..." autocomplete="off">
+      <button class="btn" id="btn-save-key" onclick="saveAiKey()"></button>
+      <button class="btn gray" id="btn-ai-balance" onclick="checkBalance()"></button>
+      <span id="ai-balance" style="font-size:13px;color:var(--muted)"></span>
+    </div>
+    <div class="ai-row">
+      <label><input type="checkbox" id="ai-enabled" onchange="toggleAi()">
+        <span id="ai-enabled-label" style="font-size:13px;color:#555"></span></label>
+    </div>
+    <div class="ai-row" style="flex-wrap:wrap">
+      <span id="h-languages" style="font-size:13px;color:#555"></span>
+      <span id="lang-list" style="display:flex;gap:6px;flex-wrap:wrap"></span>
+    </div>
+    <div class="ai-row">
+      <input id="lang-code" placeholder="ja" maxlength="5" style="width:70px">
+      <input id="lang-name" placeholder="日本語">
+      <button class="btn" id="btn-add-lang" onclick="addLanguage()"></button>
+    </div>
+    <div class="note" id="ai-note"></div>
+  </div>
+</div>
 </main>
 
 <!-- 大图查看 / large image view -->
@@ -515,6 +520,9 @@ async function updateService() {
   toast((r.success ? '🔄 ' : '❌ ') + (r.message || ''));
   btn.disabled = false;
 }
+
+function showSettings() { document.getElementById('main-view').style.display = 'none'; document.getElementById('settings-view').style.display = 'block'; }
+function hideSettings() { document.getElementById('settings-view').style.display = 'none'; document.getElementById('main-view').style.display = 'block'; }
 
 async function setLang(lang) {
   await api('/api/language', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({language: lang}) });
