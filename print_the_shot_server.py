@@ -24,6 +24,7 @@ import argparse
 import http.server
 import socketserver
 import urllib.parse
+import re
 from datetime import datetime
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
@@ -228,6 +229,7 @@ LANGUAGES = {
         "ai_lang_hint": "language name required",
         "btn_translate": "Translate this chart with AI",
         "ai_translating": "Translating UI strings via AI, ~10-30s...",
+        "t_title": "Translate this chart into...",
         "stat_ai_balance": "AI Balance",
         "translate_done": "Translated and re-rendered",
         "update_title": "Service Update",
@@ -329,6 +331,7 @@ LANGUAGES = {
         "ai_lang_hint": "请输入语言名称",
         "btn_translate": "AI 翻译本条曲线",
         "ai_translating": "AI 正在翻译界面文案,约需 10-30 秒...",
+        "t_title": "翻译本条曲线为...",
         "stat_ai_balance": "AI 余额",
         "translate_done": "已翻译并重新渲染",
         "update_title": "服务更新",
@@ -481,10 +484,14 @@ def ai_translate(text, target_lang):
         return cached
     if not settings.get("deepseek_key") or not settings.get("ai_enabled"):
         return text
+    # 用语言显示名而非内部代码(如 Français 而不是 lang1),AI才能正确理解
+    # use the display name (e.g. Français) instead of the internal code (lang1)
+    lang_name = {"en": "English", "zh": "Simplified Chinese"}.get(
+        target_lang, settings.get("languages", {}).get(target_lang, {}).get("name", target_lang))
     try:
         out = ai_call([
             {"role": "system",
-             "content": f"You translate coffee bean info (origin, processing, flavor notes) into {target_lang}. "
+             "content": f"You translate coffee bean info (origin, processing, flavor notes) into {lang_name}. "
                         f"Keep brand names, farm names and technical terms intact. Return ONLY the translation."},
             {"role": "user", "content": text},
         ], timeout=AI_TIMEOUT)
@@ -1452,13 +1459,17 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"success": False, "message": f"add language failed: {e}"}, 500)
 
     def handle_translate_shot(self):
-        """POST /api/translate/shot {filename} — 用DeepSeek翻译该条豆子信息并重渲染图表
-        Translate a shot's bean info via DeepSeek and re-render its chart"""
+        """POST /api/translate/shot {filename, lang?} — 用DeepSeek翻译该条豆子信息并重渲染图表
+        Translate a shot's bean info via DeepSeek and re-render its chart (lang optional, defaults to UI language)"""
         global current_language
         try:
             length = int(self.headers.get("Content-Length", 0))
             data = json.loads(self.rfile.read(length).decode("utf-8"))
             filename = data.get("filename", "")
+            target_lang = data.get("lang") or current_language
+            if target_lang not in LANGUAGES:
+                self._send_json({"success": False, "message": f"language '{target_lang}' not available"})
+                return
             filepath = os.path.join(DATA_DIR, filename)
             if not os.path.exists(filepath):
                 self._send_json({"success": False, "message": "shot not found"})
@@ -1471,11 +1482,11 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             bean_meta = shot_data.get("meta", {}).get("bean", {}) or {}
             if bean_meta:
                 bean_meta = dict(bean_meta)
-                bean_meta["type"] = clean_bean_text(ai_translate(str(bean_meta.get("type", "")), current_language))
-                bean_meta["notes"] = clean_bean_text(ai_translate(str(bean_meta.get("notes", "")), current_language))
+                bean_meta["type"] = clean_bean_text(ai_translate(str(bean_meta.get("type", "")), target_lang))
+                bean_meta["notes"] = clean_bean_text(ai_translate(str(bean_meta.get("notes", "")), target_lang))
                 shot_data.setdefault("meta", {})["bean"] = bean_meta
             image_path = os.path.join(IMAGE_DIR, filename.replace(".json", ".png"))
-            ok = render_chart(shot_data, image_path, data.get("machine_id", "UNKNOWN"), current_language)
+            ok = render_chart(shot_data, image_path, data.get("machine_id", "UNKNOWN"), target_lang)
             new_bean = bean_meta.get("type", "未知") if bean_meta else "未知"
             with shots_lock:
                 for s in received_shots:

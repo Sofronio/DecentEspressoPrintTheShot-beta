@@ -71,6 +71,9 @@
   .lightbox.show { display: flex; }
   .lightbox img { max-width: 94vw; max-height: 92vh; background: #fff; border-radius: 4px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
   .lightbox .close { position: absolute; top: 14px; right: 22px; color: #fff; font-size: 28px; line-height: 1; cursor: pointer; }
+  .lb-wrap { background: #fff; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 96vw; }
+  .lb-actions { display: flex; gap: 8px; }
+  .t-modal { padding: 20px; width: 360px; }
   ol.steps { margin-left: 18px; font-size: 13px; color: #555; line-height: 1.9; }
   code { background: #f0f2f5; border-radius: 4px; padding: 1px 6px; font-size: 12px; }
 </style>
@@ -194,9 +197,31 @@
 </main>
 
 <!-- 大图查看 / large image view -->
-<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+<!-- 大图查看(带操作栏) / large image view with actions -->
+<div class="lightbox" id="lightbox" onclick="if(event.target===this)closeLightbox()">
   <span class="close">✕</span>
-  <img id="lightbox-img" alt="large chart">
+  <div class="lb-wrap" onclick="event.stopPropagation()">
+    <img id="lightbox-img" alt="large chart">
+    <div class="lb-actions">
+      <button class="btn" id="lb-print" onclick="printLightbox()" title="🖨️">🖨️</button>
+      <a class="btn gray" id="lb-json" download title="JSON">📄</a>
+      <a class="btn gray" id="lb-png" download title="PNG">🖼️</a>
+    </div>
+  </div>
+</div>
+
+<!-- 翻译语言选择 / translate language picker -->
+<div class="lightbox" id="translate-modal" onclick="if(event.target===this)closeTranslateModal()">
+  <div class="lb-wrap t-modal" onclick="event.stopPropagation()">
+    <h3 id="t-title" style="margin-bottom:12px;color:#333"></h3>
+    <select id="t-lang" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px"></select>
+    <input id="t-lang-custom" placeholder="..." style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;box-sizing:border-box">
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn" id="t-go" onclick="doTranslate()"></button>
+      <button class="btn gray" onclick="closeTranslateModal()">✕</button>
+    </div>
+    <div class="note" id="t-note" style="margin-top:8px"></div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -278,19 +303,58 @@ async function addLanguage() {
   if (r.success) setTimeout(() => location.reload(), 900);
 }
 
-// 翻译当前曲线内容(豆子信息→当前语言,重渲染) / translate this shot's chart content
+// 翻译当前曲线:先选语言,再翻译重渲染,完成后弹大图
+let pendingTranslateFn = '';
+
 async function translateShot(filename) {
-  const r = await api('/api/translate/shot', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({filename: filename}) })
-    .catch(e => ({ success: false, message: String(e) }));
-  toast((r.success ? '🌐 ' : '❌ ') + (r.message || ''));
-  if (r.success) {
-    // 刷新该卡片图片(加缓存破坏参数) / refresh the card image with cache-buster
-    const png = filename.replace('.json', '.png');
-    document.querySelectorAll(`img[data-fn="${filename}"]`).forEach(i => {
-      i.src = '/images/' + png + '?t=' + Date.now();
-    });
-    loadShots();
+  pendingTranslateFn = filename;
+  // 语言下拉:内置 + 自定义;留空输入框填其他语言
+  const sel = document.getElementById('t-lang');
+  const langs = L.__languages || [{code:'en',name:'English'},{code:'zh',name:'中文'}];
+  sel.innerHTML = langs.map(l => `<option value="${l.code}">${l.name}</option>`).join('');
+  document.getElementById('t-lang-custom').value = '';
+  document.getElementById('t-note').textContent = '';
+  document.getElementById('t-title').textContent = '🌐 ' + (L.t_title || 'Translate into...');
+  document.getElementById('t-go').textContent = L.btn_translate || 'Translate';
+  document.getElementById('translate-modal').classList.add('show');
+}
+
+function closeTranslateModal() {
+  document.getElementById('translate-modal').classList.remove('show');
+}
+
+async function doTranslate() {
+  const sel = document.getElementById('t-lang');
+  const custom = document.getElementById('t-lang-custom').value.trim();
+  let lang = sel.value;
+  const note = document.getElementById('t-note');
+  const btn = document.getElementById('t-go');
+  btn.disabled = true;
+  btn.textContent = '⏳';
+  // 自定义语言:先自动添加(如果还没注册) / auto-add custom language first
+  if (custom) {
+    note.textContent = '⏳ ' + (L.ai_translating || 'translating...');
+    const ar = await api('/api/languages', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name: custom}) })
+      .catch(e => ({ success: false, message: String(e) }));
+    if (!ar.success) { note.textContent = '❌ ' + (ar.message || ''); btn.disabled = false; btn.textContent = '🌐'; return; }
+    // 从新增的语言里找对应的code
+    const ls = await api('/api/languages');
+    const added = ls.languages.find(l => l.name === custom);
+    lang = added ? added.code : lang;
   }
+  const r = await api('/api/translate/shot', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({filename: pendingTranslateFn, lang: lang}) })
+    .catch(e => ({ success: false, message: String(e) }));
+  btn.disabled = false;
+  btn.textContent = '🌐';
+  if (!r.success) { note.textContent = '❌ ' + (r.message || ''); return; }
+  closeTranslateModal();
+  // 刷新卡片图片 + 弹大图(带操作栏)
+  const png = pendingTranslateFn.replace('.json', '.png');
+  document.querySelectorAll(`img[data-fn="${pendingTranslateFn}"]`).forEach(i => {
+    i.src = '/images/' + png + '?t=' + Date.now();
+  });
+  viewImage(pendingTranslateFn);
+  loadShots();
 }
 
 async function deleteLanguage(code) {
@@ -512,14 +576,27 @@ async function printShot(filename) {
   toast(r.message || T('print_job_sent'));
 }
 
-// 点击缩略图查看大图(不再触发打印)
+// 点击缩略图查看大图(不再触发打印) / click thumbnail for the large view
+let lightboxFilename = '';
+
 function viewImage(filename) {
-  document.getElementById('lightbox-img').src = '/images/' + filename.replace('.json', '.png');
+  lightboxFilename = filename;
+  const png = filename.replace('.json', '.png');
+  document.getElementById('lightbox-img').src = '/images/' + png;
+  document.getElementById('lb-json').href = '/download/json/' + filename;
+  document.getElementById('lb-png').href = '/images/' + png + '?t=' + Date.now();
   document.getElementById('lightbox').classList.add('show');
 }
 
 function closeLightbox() {
   document.getElementById('lightbox').classList.remove('show');
+}
+
+// 大图操作栏:打印 / print the shot shown in the lightbox
+async function printLightbox() {
+  if (!lightboxFilename) return;
+  const r = await api('/api/print', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({filename: lightboxFilename.replace('.json', '.png')}) });
+  toast(r.message || T('print_job_sent'));
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
