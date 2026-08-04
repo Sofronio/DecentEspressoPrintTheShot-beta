@@ -582,7 +582,7 @@ let lightboxFilename = '';
 function viewImage(filename) {
   lightboxFilename = filename;
   const png = filename.replace('.json', '.png');
-  document.getElementById('lightbox-img').src = '/images/' + png;
+  document.getElementById('lightbox-img').src = '/images/' + png + '?t=' + Date.now();  // 缓存破坏,确保显示最新图
   document.getElementById('lb-json').href = '/download/json/' + filename;
   document.getElementById('lb-png').href = '/images/' + png + '?t=' + Date.now();
   document.getElementById('lightbox').classList.add('show');
