@@ -313,7 +313,33 @@ LANGUAGES = {
     },
 }
 
-current_language = "en"   # 默认英文,可在网页右上角切换
+current_language = "en"   # 默认英文,可在网页右上角切换 / default English; switchable at the top-right of the web UI
+
+# 豆子/方案中英名映射:展示层翻译,存储保持原始名称
+# Bean/profile name mapping (zh<->en): translated at the display layer; storage keeps the original
+PROFILE_TRANSLATIONS = {
+    "温和香甜": "Gentle & Sweet", "甜甜萃": "Sweet", "自适应": "Adaptive",
+    "长萃": "Allongé", "绽放": "Blooming", "涡轮": "Turbo", "经典浓缩": "Classic",
+    "伦敦之王": "Londinium", "克雷米纳": "Cremina", "高提取": "High Extraction",
+}
+BEAN_TRANSLATIONS = {
+    "哥伦比亚·乌伊拉 卡图拉/卡斯蒂略 · 日晒": "Colombia Huila Caturra/Castillo · Natural",
+    "哥伦比亚 鲁比·奇罗索III · 厌氧水洗": "Colombia Rubí Chiroso III · Anaerobic Washed",
+    "哥伦比亚 迪纳斯蒂亚瑰夏 · 厌氧水洗": "Colombia Dinastía Gesha · Anaerobic Washed",
+    "肯尼亚·涅里 卡利鲁尼AA SL28/鲁伊鲁11 · 水洗": "Kenya Nyeri Kaliluni AA SL28/Ruiru 11 · Washed",
+    "埃塞俄比亚·科科塞 · 日晒": "Ethiopia Kokose · Natural",
+    "洪都拉斯 戈沙·拉萨尔瓦赫瑰夏 · 水洗": "Honduras Gosha La Salvaje Gesha · Washed",
+}
+
+
+def display_name(name, mapping):
+    """按当前界面语言翻译名称;未知名称原样返回 / translate a name for the current UI language"""
+    if not name:
+        return name
+    if current_language == "en":
+        return mapping.get(name, name)
+    rev = {v: k for k, v in mapping.items()}
+    return rev.get(name, name)
 
 
 def get_text(key):
@@ -1064,6 +1090,10 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             shots = [s for s in shots if s.get("timestamp", "")[:8] == date_str][:500]
         else:
             shots = shots[:100]
+        # 展示层翻译:卡片标题按界面语言显示,存储保持原始名称
+        for s in shots:
+            s["bean"] = display_name(s.get("bean", ""), BEAN_TRANSLATIONS)
+            s["profile"] = display_name(s.get("profile", ""), PROFILE_TRANSLATIONS)
         self._send_json({"shots": shots, "dates": dates_fmt})
 
     def send_stats(self):
@@ -1090,9 +1120,9 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             "per_date": recent,
             "older_days": len(older),
             "older_count": sum(x["count"] for x in older),
-            "top_profiles": [{"name": n, "count": c}
+            "top_profiles": [{"name": display_name(n, PROFILE_TRANSLATIONS), "count": c}
                              for n, c in profiles.most_common(5)],
-            "top_beans": [{"name": n, "count": c}
+            "top_beans": [{"name": display_name(n, BEAN_TRANSLATIONS), "count": c}
                           for n, c in beans.most_common(6)],
         })
 
