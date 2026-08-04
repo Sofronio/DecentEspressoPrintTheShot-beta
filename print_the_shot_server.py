@@ -216,6 +216,16 @@ LANGUAGES = {
         "per_page": "per page",
         "total_n": "Total {n}",
         "plugin_note": "The local plugin matches this server version; the GitHub one may be newer.",
+        "h_ai_settings": "AI Translation and Languages",
+        "btn_save_key": "Save API Key",
+        "btn_check_balance": "Check Balance",
+        "ai_enabled_label": "Enable AI translation for bean info (timeout falls back to original text)",
+        "h_languages": "Languages:",
+        "btn_add_lang": "Add Language",
+        "ai_key_hint": "enter API key",
+        "ai_key_saved": "API key saved",
+        "ai_toggled": "AI translation setting saved",
+        "ai_lang_hint": "language code + name required",
         "update_title": "Service Update",
         "btn_check_update": "Check for updates",
         "btn_update_service": "Update service from GitHub (auto backup)",
@@ -303,6 +313,16 @@ LANGUAGES = {
         "per_page": "每页",
         "total_n": "共 {n} 条",
         "plugin_note": "本地插件与当前服务器版本匹配;GitHub 上的可能更新。",
+        "h_ai_settings": "AI 翻译与语言",
+        "btn_save_key": "保存 API Key",
+        "btn_check_balance": "查余额",
+        "ai_enabled_label": "启用 AI 翻译豆子信息(超时自动回退原文)",
+        "h_languages": "语言:",
+        "btn_add_lang": "新增语言",
+        "ai_key_hint": "请输入 API Key",
+        "ai_key_saved": "API Key 已保存",
+        "ai_toggled": "AI 翻译设置已保存",
+        "ai_lang_hint": "需要语言代码和名称",
         "update_title": "服务更新",
         "btn_check_update": "检查更新",
         "btn_update_service": "从 GitHub 更新服务(自动备份)",
@@ -344,6 +364,114 @@ def display_name(name, mapping):
 
 def get_text(key):
     return LANGUAGES.get(current_language, LANGUAGES["en"]).get(key, key)
+
+
+# ---------------------------------------------------------------------------
+# AI 翻译设置(DeepSeek):设置持久化 + 自定义语言 + 翻译缓存
+# AI translation settings (DeepSeek): persisted settings + custom languages + translation cache
+# ---------------------------------------------------------------------------
+SETTINGS_FILE = os.path.join(os.getcwd(), "settings.json")
+TRANSLATION_CACHE_FILE = os.path.join(os.getcwd(), "translations.json")
+DEEPSEEK_API = "https://api.deepseek.com/chat/completions"
+DEEPSEEK_BALANCE = "https://api.deepseek.com/user/balance"
+AI_TIMEOUT = 8          # 单条翻译超时 / single-translation timeout (s)
+AI_TIMEOUT_BATCH = 30   # 批量UI文案翻译超时 / batch UI-strings timeout (s)
+
+settings = {"deepseek_key": "", "ai_enabled": False, "languages": {}}
+translation_cache = {}  # {"zh": {"原文": "译文"}}  / per-language cache
+
+
+def load_settings():
+    """启动时加载设置与自定义语言 / load settings and custom languages at startup"""
+    global settings, translation_cache
+    try:
+        if os.path.exists(SETTINGS_FILE):
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                settings.update(json.load(f))
+    except Exception as e:
+        print(f"⚠️ settings.json 读取失败: {e}")
+    try:
+        if os.path.exists(TRANSLATION_CACHE_FILE):
+            with open(TRANSLATION_CACHE_FILE, "r", encoding="utf-8") as f:
+                translation_cache = json.load(f)
+    except Exception:
+        translation_cache = {}
+    # 把自定义语言合并进 LANGUAGES,渲染/注入直接可用
+    for code, info in settings.get("languages", {}).items():
+        if info.get("strings"):
+            LANGUAGES[code] = info["strings"]
+
+
+def save_settings():
+    """持久化设置(settings.json 含 API key,已在 .gitignore)"""
+    try:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(settings, f, ensure_ascii=False, indent=1)
+    except Exception as e:
+        print(f"⚠️ 设置保存失败: {e}")
+
+
+def save_translation_cache():
+    try:
+        with open(TRANSLATION_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(translation_cache, f, ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+
+
+def ai_call(messages, timeout=AI_TIMEOUT):
+    """调用 DeepSeek,返回响应文本;失败抛异常 / call DeepSeek, returns text"""
+    import urllib.request
+    key = settings.get("deepseek_key", "")
+    if not key:
+        raise RuntimeError("no api key")
+    body = json.dumps({
+        "model": "deepseek-chat",
+        "messages": messages,
+        "temperature": 0.3,
+        "max_tokens": 2000,
+    }).encode("utf-8")
+    req = urllib.request.Request(DEEPSEEK_API, data=body, method="POST",
+                                 headers={"Authorization": f"Bearer {key}",
+                                          "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        resp = json.loads(r.read().decode("utf-8"))
+    return resp["choices"][0]["message"]["content"].strip()
+
+
+def ai_translate(text, target_lang):
+    """把豆子信息翻译成目标语言;缓存优先,静态表快速路径,失败返回原文
+    Translate bean info into the target language: cache first, static-map fast path, original on failure"""
+    if not text or not text.strip():
+        return text
+    # 静态表快速路径(演示豆子直接命中,不花token)
+    if target_lang == "en":
+        t = BEAN_TRANSLATIONS.get(text)
+        if t:
+            return t
+    elif target_lang == "zh":
+        t = {v: k for k, v in BEAN_TRANSLATIONS.items()}.get(text)
+        if t:
+            return t
+    # 缓存
+    cached = translation_cache.get(target_lang, {}).get(text)
+    if cached:
+        return cached
+    if not settings.get("deepseek_key") or not settings.get("ai_enabled"):
+        return text
+    try:
+        out = ai_call([
+            {"role": "system",
+             "content": f"You translate coffee bean info (origin, processing, flavor notes) into {target_lang}. "
+                        f"Keep brand names, farm names and technical terms intact. Return ONLY the translation."},
+            {"role": "user", "content": text},
+        ], timeout=AI_TIMEOUT)
+        translation_cache.setdefault(target_lang, {})[text] = out
+        save_translation_cache()
+        return out
+    except Exception as e:
+        print(f"⚠️ AI 翻译失败(使用原文): {e}")
+        return text  # 降级:原文,打印不受影响 / fallback: original text
 
 
 def is_windows():
@@ -987,6 +1115,12 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             self.send_stats()
         elif path == "/api/update/check":
             self.check_update()
+        elif path == "/api/settings/ai":
+            self.send_ai_settings()
+        elif path == "/api/ai/balance":
+            self.send_ai_balance()
+        elif path == "/api/languages":
+            self.send_languages()
         elif path == "/api/settings":
             self._send_json({
                 "bean_info_enabled": BEAN_INFO_ENABLED,
@@ -1027,6 +1161,12 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_plugin_update()
         elif path == "/api/update":
             self.handle_update()
+        elif path == "/api/settings/ai":
+            self.save_ai_settings()
+        elif path == "/api/languages":
+            self.add_language()
+        elif path == "/api/languages/delete":
+            self.delete_language()
         else:
             self.send_error(404, "Endpoint not found")
 
@@ -1046,7 +1186,14 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             with open(WEB_INDEX, "r", encoding="utf-8") as f:
                 html = f.read()
             html = html.replace("{{VERSION}}", VERSION)
-            lang_json = json.dumps(LANGUAGES[current_language], ensure_ascii=False)
+            lang_json = dict(LANGUAGES[current_language])
+            # 附带当前语言码与可用语言列表(供切换器动态渲染)
+            # attach current code + available languages for the switcher
+            lang_json["__code"] = current_language
+            lang_json["__languages"] = [{"code": "en", "name": "English"}, {"code": "zh", "name": "中文"}] + [
+                {"code": c, "name": i.get("name", c)}
+                for c, i in settings.get("languages", {}).items()]
+            lang_json = json.dumps(lang_json, ensure_ascii=False)
             lang_json = lang_json.replace("'", "&#39;")  # 防单引号破坏JS字符串(can't 之类)
             html = html.replace("{{LANG}}", lang_json)
             body = html.encode("utf-8")
@@ -1188,6 +1335,109 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
         ok, msg = perform_update(GITHUB_ZIP_URL, os.getcwd(), current_language)
         self._send_json({"success": ok, "message": msg}, 200 if ok else 500)
 
+    # ---------- AI 翻译设置 / AI translation settings ----------
+    def send_ai_settings(self):
+        """GET /api/settings/ai — 当前AI设置(不返回key本身)"""
+        self._send_json({
+            "key_set": bool(settings.get("deepseek_key")),
+            "ai_enabled": bool(settings.get("ai_enabled")),
+        })
+
+    def save_ai_settings(self):
+        """POST /api/settings/ai {key?, enabled?} — 保存key/开关"""
+        global settings
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+            if "key" in data and data["key"] is not None:
+                settings["deepseek_key"] = data["key"].strip()
+            if "enabled" in data:
+                settings["ai_enabled"] = bool(data["enabled"])
+            save_settings()
+            self._send_json({"success": True, "key_set": bool(settings["deepseek_key"]),
+                             "ai_enabled": settings["ai_enabled"]})
+        except Exception as e:
+            self._send_json({"success": False, "message": str(e)}, 500)
+
+    def send_ai_balance(self):
+        """GET /api/ai/balance — DeepSeek 余额(兼作连接测试)"""
+        import urllib.request
+        key = settings.get("deepseek_key", "")
+        if not key:
+            self._send_json({"success": False, "message": "no api key"})
+            return
+        try:
+            req = urllib.request.Request(DEEPSEEK_BALANCE, method="GET",
+                                         headers={"Authorization": f"Bearer {key}"})
+            with urllib.request.urlopen(req, timeout=AI_TIMEOUT) as r:
+                resp = json.loads(r.read().decode("utf-8"))
+            infos = resp.get("balance_infos", [])
+            total = sum(float(i.get("total_balance", 0)) for i in infos)
+            currency = infos[0].get("currency", "CNY") if infos else "CNY"
+            self._send_json({"success": True, "balance": round(total, 2), "currency": currency})
+        except Exception as e:
+            self._send_json({"success": False, "message": f"balance check failed: {e}"})
+
+    def send_languages(self):
+        """GET /api/languages — 可用语言列表(内置 + 自定义)"""
+        langs = [{"code": "en", "name": "English", "builtin": True},
+                 {"code": "zh", "name": "中文", "builtin": True}]
+        for code, info in settings.get("languages", {}).items():
+            langs.append({"code": code, "name": info.get("name", code), "builtin": False})
+        self._send_json({"languages": langs})
+
+    def add_language(self):
+        """POST /api/languages {code, name} — 用DeepSeek把UI文案翻译成新语言并启用
+        Add a custom language: translate all UI strings via DeepSeek and activate it"""
+        global settings
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+            code = data.get("code", "").strip().lower()
+            name = data.get("name", "").strip()
+            if not re.match(r"^[a-z]{2,5}$", code):
+                self._send_json({"success": False, "message": "language code must be 2-5 lowercase letters"})
+                return
+            if code in ("en", "zh"):
+                self._send_json({"success": False, "message": f"{code} is a built-in language"})
+                return
+            if not settings.get("deepseek_key"):
+                self._send_json({"success": False, "message": "DeepSeek API key required first"})
+                return
+            # 批量翻译EN文案 → JSON
+            prompt = ("Translate the following JSON object of UI strings into " + name +
+                      " (" + code + "). Keep {placeholders} intact. "
+                      "Return ONLY valid JSON with the same keys.")
+            out = ai_call([{"role": "system", "content": prompt},
+                           {"role": "user", "content": json.dumps(LANGUAGES["en"], ensure_ascii=False)}],
+                          timeout=AI_TIMEOUT_BATCH)
+            import re as _re
+            m = _re.search(r"\{.*\}", out, _re.S)
+            strings = json.loads(m.group(0)) if m else json.loads(out)
+            settings.setdefault("languages", {})[code] = {"name": name, "strings": strings}
+            save_settings()
+            LANGUAGES[code] = strings  # 立即生效
+            self._send_json({"success": True, "message": f"language {name} ({code}) added",
+                             "strings_count": len(strings)})
+        except Exception as e:
+            self._send_json({"success": False, "message": f"add language failed: {e}"}, 500)
+
+    def delete_language(self):
+        """DELETE /api/languages/delete {code} — 移除自定义语言"""
+        global settings
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+            code = data.get("code", "")
+            langs = settings.get("languages", {})
+            if code in langs:
+                del langs[code]
+                LANGUAGES.pop(code, None)
+                save_settings()
+            self._send_json({"success": True})
+        except Exception as e:
+            self._send_json({"success": False, "message": str(e)}, 500)
+
     def handle_plugin_update(self):
         """从GitHub拉取最新plugin.tcl,先本地备份再覆盖"""
         global current_language
@@ -1300,6 +1550,20 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
         global current_language
         with open(filepath, "r", encoding="utf-8") as f:
             shot_data = json.load(f)
+
+        # AI翻译:豆子信息按当前界面语言翻译(超时降级用原文,打印不受影响)
+        # AI translate: bean info into the current UI language (timeout falls back to original)
+        lang = current_language
+        if settings.get("ai_enabled") and settings.get("deepseek_key") and lang in LANGUAGES:
+            bean_meta = shot_data.get("meta", {}).get("bean", {})
+            if bean_meta:
+                if lang != "zh" or not re.search("[一-鿿]", str(bean_meta.get("type", ""))):
+                    translated_type = ai_translate(str(bean_meta.get("type", "")), lang)
+                    translated_notes = ai_translate(str(bean_meta.get("notes", "")), lang)
+                    bean_meta = dict(bean_meta)
+                    bean_meta["type"] = translated_type
+                    bean_meta["notes"] = translated_notes
+                    shot_data.setdefault("meta", {})["bean"] = bean_meta
 
         image_filename = filename.replace(".json", ".png")
         image_path = os.path.join(IMAGE_DIR, image_filename)
@@ -1452,6 +1716,7 @@ def main():
         PRINT_ENABLED = False
 
     ensure_directories()
+    load_settings()   # 加载AI设置与自定义语言 / load AI settings & custom languages
     load_history()  # 恢复历史数据(重启不丢)
     print_server_info(args.port)
 

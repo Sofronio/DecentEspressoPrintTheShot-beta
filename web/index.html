@@ -49,6 +49,8 @@
   .btn.red { background: #c0392b; }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
   .dropzone { border: 2px dashed #b8c4d8; border-radius: 10px; padding: 26px; text-align: center; color: var(--muted); cursor: pointer; background: #fafbfe; }
+  .ai-row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+  .ai-row input[type=text], .ai-row input[type=password] { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; flex: 1; max-width: 340px; }
   .dropzone.drag { background: #eef3fc; border-color: var(--accent); color: var(--accent); }
   .shot-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }  /* 固定3列: 9条=3x3, 18条=3x6 / fixed 3 columns: 9 = 3x3, 18 = 3x6 */
   .shot { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #fff; }
@@ -79,10 +81,7 @@
     <h1 id="title">PrintTheShot Beta</h1>
     <div class="sub" id="subtitle"></div>
   </div>
-  <div class="lang-switch">
-    <button id="lang-zh" onclick="setLang('zh')">中文</button>
-    <button id="lang-en" onclick="setLang('en')">EN</button>
-  </div>
+  <div class="lang-switch" id="lang-switch"></div>
 </header>
 
 <main>
@@ -95,6 +94,31 @@
       <button class="btn" id="btn-bean" onclick="toggleBean()"></button>
       <button class="btn gray" onclick="refreshAll()" id="btn-refresh"></button>
     </div>
+  </div>
+
+  <!-- 设置:AI翻译 + 语言管理 / Settings: AI translation + languages -->
+  <div class="card">
+    <h2 id="h-ai-settings"></h2>
+    <div class="ai-row">
+      <input type="password" id="ai-key" placeholder="sk-..." autocomplete="off">
+      <button class="btn" id="btn-save-key" onclick="saveAiKey()"></button>
+      <button class="btn gray" id="btn-ai-balance" onclick="checkBalance()"></button>
+      <span id="ai-balance" style="font-size:13px;color:var(--muted)"></span>
+    </div>
+    <div class="ai-row">
+      <label><input type="checkbox" id="ai-enabled" onchange="toggleAi()">
+        <span id="ai-enabled-label" style="font-size:13px;color:#555"></span></label>
+    </div>
+    <div class="ai-row" style="flex-wrap:wrap">
+      <span id="h-languages" style="font-size:13px;color:#555"></span>
+      <span id="lang-list" style="display:flex;gap:6px;flex-wrap:wrap"></span>
+    </div>
+    <div class="ai-row">
+      <input id="lang-code" placeholder="ja" maxlength="5" style="width:70px">
+      <input id="lang-name" placeholder="日本語">
+      <button class="btn" id="btn-add-lang" onclick="addLanguage()"></button>
+    </div>
+    <div class="note" id="ai-note"></div>
   </div>
 
   <!-- 打印队列 / Print queue -->
@@ -174,7 +198,69 @@
 
 <script>
 const L = JSON.parse('{{LANG}}'.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#39;/g, "'"));
-let currentLang = L.language || 'zh';
+let currentLang = L.__code || 'en';
+
+// 动态语言切换器(内置 + 自定义) / dynamic language switcher (built-in + custom)
+function initLangSwitcher() {
+  const langs = L.__languages || [{code: 'en', name: 'English'}, {code: 'zh', name: '中文'}];
+  document.getElementById('lang-switch').innerHTML = langs.map(l =>
+    `<button class="${l.code === currentLang ? 'active' : ''}" onclick="setLang('${l.code}')">${l.name}</button>`).join('');
+}
+
+// AI 翻译设置 / AI translation settings
+async function loadAiSettings() {
+  const s = await api('/api/settings/ai');
+  document.getElementById('ai-enabled').checked = !!s.ai_enabled;
+  const keyInput = document.getElementById('ai-key');
+  keyInput.placeholder = s.key_set ? '•••••••• (sk-...)' : 'sk-...';
+  await loadLanguages();
+}
+
+async function saveAiKey() {
+  const key = document.getElementById('ai-key').value.trim();
+  if (!key) { toast('❌ ' + (L.ai_key_hint || 'enter key')); return; }
+  const r = await api('/api/settings/ai', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({key: key}) });
+  if (r.success) { toast('✅ ' + (L.ai_key_saved || 'key saved')); document.getElementById('ai-key').value = ''; }
+  loadAiSettings();
+}
+
+async function toggleAi() {
+  const enabled = document.getElementById('ai-enabled').checked;
+  const r = await api('/api/settings/ai', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({enabled: enabled}) });
+  if (r.success) toast((enabled ? '✅ ' : '') + (L.ai_toggled || 'saved'));
+}
+
+async function checkBalance() {
+  const el = document.getElementById('ai-balance');
+  el.textContent = '...';
+  const r = await api('/api/ai/balance');
+  el.textContent = r.success ? `💰 ${r.balance} ${r.currency}` : '❌ ' + (r.message || '');
+}
+
+async function loadLanguages() {
+  const r = await api('/api/languages');
+  const el = document.getElementById('lang-list');
+  el.innerHTML = r.languages.map(l =>
+    l.builtin
+      ? `<span class="pager" style="padding:3px 8px;background:#eef1f5;border-radius:6px">${l.name}</span>`
+      : `<span class="pager" style="padding:3px 8px;background:#eef1f5;border-radius:6px">${l.name}
+           <a href="javascript:void(0)" onclick="deleteLanguage('${l.code}')" style="color:#c0392b;margin-left:4px">✕</a></span>`
+  ).join('');
+}
+
+async function addLanguage() {
+  const code = document.getElementById('lang-code').value.trim().toLowerCase();
+  const name = document.getElementById('lang-name').value.trim();
+  if (!code || !name) { toast('❌ ' + (L.ai_lang_hint || 'code + name required')); return; }
+  const r = await api('/api/languages', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({code: code, name: name}) });
+  toast((r.success ? '✅ ' : '❌ ') + (r.message || ''));
+  if (r.success) { document.getElementById('lang-code').value = ''; document.getElementById('lang-name').value = ''; location.reload(); }
+}
+
+async function deleteLanguage(code) {
+  const r = await api('/api/languages/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({code: code}) });
+  if (r.success) location.reload();
+}
 
 function T(key) { return L[key] || key; }
 
@@ -474,6 +560,12 @@ function initText() {
   document.getElementById('btn-plugin-txt').textContent = T('plugin_txt');
   document.getElementById('plugin-note').textContent = T('plugin_note');
   document.getElementById('h-update').textContent = '🔄 ' + T('update_title');
+  document.getElementById('h-ai-settings').textContent = '🤖 ' + T('h_ai_settings');
+  document.getElementById('btn-save-key').textContent = T('btn_save_key');
+  document.getElementById('btn-ai-balance').textContent = T('btn_check_balance');
+  document.getElementById('ai-enabled-label').textContent = T('ai_enabled_label');
+  document.getElementById('h-languages').textContent = T('h_languages');
+  document.getElementById('btn-add-lang').textContent = T('btn_add_lang');
   document.getElementById('btn-check-update').textContent = T('btn_check_update');
   document.getElementById('btn-update-service').textContent = T('btn_update_service');
   document.getElementById('update-note').textContent = T('update_note');
@@ -482,11 +574,11 @@ function initText() {
   document.getElementById('step2').textContent = T('plugin_step2');
   document.getElementById('step3').textContent = T('plugin_step3');
   document.getElementById('step4').textContent = T('plugin_step4');
-  document.getElementById('lang-zh').classList.toggle('active', currentLang === 'zh');
-  document.getElementById('lang-en').classList.toggle('active', currentLang === 'en');
 }
 
 initText();
+initLangSwitcher();
+loadAiSettings();
 refreshAll();
 setInterval(refreshAll, 8000);
 </script>

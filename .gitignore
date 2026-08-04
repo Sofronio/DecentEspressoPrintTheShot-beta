@@ -17,3 +17,7 @@ __pycache__/
 
 # 更新备份
 backup/
+
+# 敏感设置与翻译缓存
+settings.json
+translations.json
