@@ -1,0 +1,19 @@
+# 运行时数据
+shots_data/
+shots_images/
+
+# 构建产物
+dist/
+build/
+.build_venv/
+*.spec.bak
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# 更新备份
+backup/

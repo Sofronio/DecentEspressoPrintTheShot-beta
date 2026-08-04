@@ -1,0 +1,2 @@
+# PrintTheShot Neo 运行依赖:仅 pillow(无 matplotlib/numpy)
+pillow>=9.5.0

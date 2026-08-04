@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PrintTheShot Beta v{{VERSION}}</title>
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --accent:#4e85f4; --text:#333; --muted:#888; --border:#e3e5e8; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); }
+  header { background: linear-gradient(135deg, #3a3f4b, #23262e); color: #fff; padding: 18px 28px; display: flex; justify-content: space-between; align-items: center; }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header .sub { color: #aab; font-size: 12px; margin-top: 2px; }
+  .lang-switch button { background: none; border: 1px solid #556; color: #ccd; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; }
+  .lang-switch button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  main { max-width: 1100px; margin: 24px auto; padding: 0 20px; display: grid; gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+  .card h2 { font-size: 15px; margin-bottom: 14px; color: #444; display: flex; justify-content: space-between; align-items: center; }
+  .card h2 select { font-size: 13px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text); }
+  .date-nav { display: flex; gap: 6px; align-items: center; }
+  .date-nav .btn { padding: 5px 10px; font-size: 13px; }
+  .note { font-size: 12px; color: var(--muted); }
+  .list-bar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .pager { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .pager .btn { padding: 3px 9px; font-size: 12px; }
+  .pager select { font-size: 12px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text); }
+  .stats-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .stats-row .stat { flex: 1; min-width: 110px; }
+  .bar-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666; margin: 4px 0; }
+  .bar-row .bar { height: 10px; background: var(--accent); border-radius: 3px; min-width: 2px; }
+  .bar-row .bar-label { width: 100px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 统计三列一行:日期 | 冲煮方案 | 豆子 */
+  .stats-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  @media (max-width: 900px) { .stats-cols { grid-template-columns: 1fr; } }
+  /* 发散式bar(围绕均值) */
+  .div-wrap { position: relative; flex: 1; height: 12px; }
+  .div-center { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: #d8dce2; }
+  .div-wrap .bar { position: absolute; top: 1px; height: 10px; border-radius: 3px; min-width: 0; }
+  .div-wrap .bar.up { left: calc(50% + 3px); }
+  .div-wrap .bar.down { right: calc(50% + 3px); }
+  .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat { background: #fafbfc; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .stat .label { font-size: 12px; color: var(--muted); }
+  .stat .value { font-size: 20px; font-weight: 600; margin-top: 4px; }
+  .stat .value.ok { color: #2e9e5b; } .stat .value.off { color: #c0392b; }
+  .btn { display: inline-block; border: none; border-radius: 8px; padding: 9px 18px; font-size: 13px; cursor: pointer; background: var(--accent); color: #fff; margin-right: 8px; }
+  .btn.gray { background: #e8eaee; color: #444; }
+  .btn.green { background: #2e9e5b; }
+  .btn.red { background: #c0392b; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .dropzone { border: 2px dashed #b8c4d8; border-radius: 10px; padding: 26px; text-align: center; color: var(--muted); cursor: pointer; background: #fafbfe; }
+  .dropzone.drag { background: #eef3fc; border-color: var(--accent); color: var(--accent); }
+  .shot-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }  /* 固定3列: 9条=3x3, 18条=3x6 */
+  .shot { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #fff; }
+  .shot img { width: 100%; display: block; background: #fff; }
+  .shot .meta { padding: 10px 12px; font-size: 12px; color: var(--muted); }
+  .shot .meta b { color: var(--text); display: block; margin-bottom: 4px; font-size: 13px; }
+  .shot .actions { padding: 0 12px 12px; }
+  .shot img { cursor: zoom-in; }
+  #queue-list { font-size: 13px; }
+  #queue-list div { padding: 5px 0; border-bottom: 1px dashed var(--border); }
+  #queue-list .ok { color: #2e9e5b; } #queue-list .fail { color: #c0392b; }
+  #drop-file { display: none; }
+  .empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #2d333d; color: #fff; padding: 10px 22px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 99; }
+  .toast.show { opacity: 1; }
+  /* 大图查看 */
+  .lightbox { position: fixed; inset: 0; background: rgba(20,22,28,.93); display: none; align-items: center; justify-content: center; z-index: 100; cursor: zoom-out; }
+  .lightbox.show { display: flex; }
+  .lightbox img { max-width: 94vw; max-height: 92vh; background: #fff; border-radius: 4px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+  .lightbox .close { position: absolute; top: 14px; right: 22px; color: #fff; font-size: 28px; line-height: 1; cursor: pointer; }
+  ol.steps { margin-left: 18px; font-size: 13px; color: #555; line-height: 1.9; }
+  code { background: #f0f2f5; border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1 id="title">PrintTheShot Beta</h1>
+    <div class="sub" id="subtitle"></div>
+  </div>
+  <div class="lang-switch">
+    <button id="lang-zh" onclick="setLang('zh')">中文</button>
+    <button id="lang-en" onclick="setLang('en')">EN</button>
+  </div>
+</header>
+
+<main>
+  <!-- 状态 -->
+  <div class="card">
+    <h2 id="h-status"></h2>
+    <div class="status-grid" id="status-grid"></div>
+    <div style="margin-top:16px">
+      <button class="btn green" id="btn-print" onclick="togglePrint()"></button>
+      <button class="btn" id="btn-bean" onclick="toggleBean()"></button>
+      <button class="btn gray" onclick="refreshAll()" id="btn-refresh"></button>
+    </div>
+  </div>
+
+  <!-- 打印队列 -->
+  <div class="card">
+    <h2><span id="h-queue"></span><button class="btn red" onclick="clearQueue()" id="btn-clear"></button></h2>
+    <div id="queue-list"></div>
+  </div>
+
+  <!-- 上传 -->
+  <div class="card">
+    <h2 id="h-upload"></h2>
+    <div class="dropzone" id="dropzone" onclick="document.getElementById('drop-file').click()"></div>
+    <input type="file" id="drop-file" accept=".json,application/json">
+  </div>
+
+  <!-- 最近数据(日期 + 翻页,历史持久化) -->
+  <div class="card">
+    <h2><span id="h-recent"></span></h2>
+    <div class="list-bar">
+      <select id="page-size" onchange="setPageSize()"></select>
+      <span class="date-nav">
+        <button class="btn gray" id="btn-prev" onclick="shiftDate(-1)" title="">◀</button>
+        <select id="date-filter" onchange="loadShots()"></select>
+        <button class="btn gray" id="btn-next" onclick="shiftDate(1)" title="">▶</button>
+      </span>
+      <span class="pager">
+        <button class="btn gray" id="btn-page-prev" onclick="shiftPage(-1)">◀</button>
+        <span id="page-info"></span>
+        <button class="btn gray" id="btn-page-next" onclick="shiftPage(1)">▶</button>
+      </span>
+    </div>
+    <div class="shot-grid" id="shot-grid"></div>
+  </div>
+
+  <!-- 统计数据 -->
+  <div class="card">
+    <h2 id="h-stats"></h2>
+    <div class="stats-row" id="stats-grid"></div>
+    <div style="margin-top:14px" id="stats-bars"></div>
+  </div>
+
+  <!-- 插件下载 -->
+  <div class="card">
+    <h2 id="h-plugin"></h2>
+    <p>
+      <a class="btn" href="./plugin/plugin.tcl" download id="btn-plugin"></a>
+      <a class="btn gray" href="https://github.com/Sofronio/DecentEspressoPrintTheShot/releases" target="_blank" rel="noopener" id="btn-plugin-github"></a>
+      <a class="btn gray" href="./plugin/plugin.tcl.txt" download="tcl.txt" id="btn-plugin-txt"></a>
+    </p>
+    <div class="note" id="plugin-note"></div>
+    <ol class="steps">
+      <li id="step1"></li>
+      <li><code id="step2"></code></li>
+      <li id="step3"></li>
+      <li id="step4"></li>
+    </ol>
+  </div>
+
+  <!-- 服务更新 -->
+  <div class="card">
+    <h2 id="h-update"></h2>
+    <p>
+      <button class="btn" id="btn-check-update" onclick="checkUpdate()"></button>
+      <button class="btn red" id="btn-update-service" onclick="updateService()" disabled></button>
+    </p>
+    <div class="note" id="update-note"></div>
+  </div>
+</main>
+
+<!-- 大图查看 -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <span class="close">✕</span>
+  <img id="lightbox-img" alt="large chart">
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const L = JSON.parse('{{LANG}}'.replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
+let currentLang = L.language || 'zh';
+
+function T(key) { return L[key] || key; }
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  return r.json();
+}
+
+async function loadStatus() {
+  const s = await api('/api/status');
+  document.getElementById('subtitle').textContent = `${T('status_running')} · v${s.version}`;
+  const grid = document.getElementById('status-grid');
+  grid.innerHTML = [
+    [T('status_running'), s.status, ''],
+    [T('start_time'), s.start_time, ''],
+    [T('shots_received'), s.shots_received, ''],
+    [T('active_users'), s.active_users, ''],
+    [T('max_users'), s.max_users, ''],
+    [T('print_enabled'), s.print_enabled ? '✅' : '🚫', s.print_enabled ? 'ok' : 'off'],
+    [T('bean_info_enabled'), s.bean_info_enabled ? '✅' : '🚫', s.bean_info_enabled ? 'ok' : 'off'],
+  ].map(([label, value, cls]) =>
+    `<div class="stat"><div class="label">${label}</div><div class="value ${cls}">${value}</div></div>`).join('');
+  document.getElementById('btn-print').textContent = s.print_enabled ? T('disable_print') : T('enable_print');
+  document.getElementById('btn-print').classList.toggle('green', !s.print_enabled);
+  document.getElementById('btn-bean').textContent = s.bean_info_enabled ? T('disable_bean_info') : T('enable_bean_info');
+  document.getElementById('btn-bean').classList.toggle('gray', s.bean_info_enabled);
+  document.getElementById('btn-bean').classList.toggle('green', !s.bean_info_enabled);
+  document.getElementById('btn-print').classList.toggle('gray', s.print_enabled);
+}
+
+async function loadQueue() {
+  const q = await api('/api/queue');
+  document.getElementById('h-queue').textContent = T('queue_status').replace('{count}', q.count);
+  const el = document.getElementById('queue-list');
+  el.innerHTML = q.count === 0 ? `<div class="empty">${T('queue_empty')}</div>` : q.jobs.map(j =>
+    `<div>${j.time} · ${j.filename} <span class="${j.ok ? 'ok' : 'fail'}">${j.ok ? '✓' : '✗'}</span></div>`).join('');
+}
+
+let availableDates = [];
+let currentDate = '';   // 初始空 → 首次加载取今天(无数据则最新日期); 'all' = 全部日期(上限100)
+let dateInitialized = false;
+let currentPage = 0;
+let pageSize = 9;
+try { pageSize = parseInt(localStorage.getItem('pts_page_size')) || 9; } catch (e) {}
+
+async function loadShots() {
+  const d = await api('/api/shots' + (currentDate && currentDate !== 'all' ? '?date=' + currentDate : ''));
+  availableDates = d.dates;
+  // 首次:默认选今天(有数据时),否则最新日期
+  if (!dateInitialized) {
+    dateInitialized = true;
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    currentDate = availableDates.includes(today) ? today : (availableDates[0] || 'all');
+  }
+  // 日期下拉:各日期 + 全部日期(默认=当前日期)
+  const sel = document.getElementById('date-filter');
+  sel.innerHTML = d.dates.map(x => `<option value="${x}">${x}</option>`).join('')
+    + `<option value="all">${T('all_dates')}</option>`;
+  sel.value = currentDate;
+  // 每页数量(最左边)
+  const psSel = document.getElementById('page-size');
+  psSel.innerHTML = [9, 18, 36].map(n =>
+    `<option value="${n}" ${n === pageSize ? 'selected' : ''}>${n} ${T('per_page')}</option>`).join('');
+
+  // 当前页(最右边)
+  const total = d.shots.length;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (currentPage >= pages) currentPage = pages - 1;
+  if (currentPage < 0) currentPage = 0;
+  const slice = d.shots.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+
+  const grid = document.getElementById('shot-grid');
+  if (!slice.length) { grid.innerHTML = `<div class="empty" style="grid-column:1/-1">${T('no_data')}</div>`; }
+  else {
+    grid.innerHTML = slice.map(s => {
+      const png = s.filename.replace('.json', '.png');
+      const img = s.image_exists
+        ? `<img src="/images/${png}" loading="lazy" title="${T('view_large')}" onclick="viewImage('${s.filename}')">`
+        : `<div class="empty">⚠️ chart failed</div>`;
+      return `<div class="shot">${img}
+        <div class="meta"><b>${(s.bean ? s.bean + ' - ' : '') + (s.profile || '?')}</b>${s.machine_id} · ${s.timestamp} · ${(s.data_size/1024).toFixed(1)}KB</div>
+        <div class="actions">
+          <button class="btn" onclick="printShot('${s.filename}')">🖨️ ${T('print')}</button>
+          <a class="btn gray" href="/download/json/${s.filename}" download>⬇ JSON</a>
+          <a class="btn gray" href="/images/${png}" download>⬇ PNG</a>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('page-info').textContent =
+    `${currentPage + 1}/${pages} · ${T('total_n').replace('{n}', total)}`;
+  document.getElementById('btn-page-prev').disabled = currentPage <= 0;
+  document.getElementById('btn-page-next').disabled = currentPage >= pages - 1;
+
+  // 前后日(中间)
+  const idx = availableDates.indexOf(currentDate);
+  const prevBtn = document.getElementById('btn-prev');
+  const nextBtn = document.getElementById('btn-next');
+  prevBtn.title = T('prev_day'); nextBtn.title = T('next_day');
+  if (currentDate === 'all') { prevBtn.disabled = true; nextBtn.disabled = true; }
+  else { prevBtn.disabled = idx <= 0; nextBtn.disabled = idx >= availableDates.length - 1; }
+}
+
+function shiftPage(dir) {
+  currentPage += dir;
+  loadShots();
+}
+
+function setPageSize() {
+  pageSize = parseInt(document.getElementById('page-size').value);
+  try { localStorage.setItem('pts_page_size', pageSize); } catch (e) {}
+  currentPage = 0;
+  loadShots();
+}
+
+function shiftDate(dir) {
+  if (currentDate === '' || currentDate === 'all') {
+    if (availableDates.length) { currentDate = availableDates[0]; loadShots(); }
+    return;
+  }
+  const idx = availableDates.indexOf(currentDate);
+  const next = availableDates[idx + dir];
+  if (next) { currentDate = next; loadShots(); }
+}
+
+async function loadStats() {
+  const s = await api('/api/stats');
+  const grid = document.getElementById('stats-grid');
+  grid.innerHTML = [
+    [T('stat_total'), s.total_shots],
+    [T('stat_dates'), s.total_dates],
+    [T('stat_machines'), s.machines],
+    [T('stat_avg_size'), (s.avg_data_size/1024).toFixed(0) + 'KB'],
+    [T('stat_prints'), s.prints_session],
+  ].map(([label, value]) =>
+    `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div></div>`).join('');
+  // 三列分布:日期(围绕均值发散) | 冲煮方案(对数+颜色) | 豆子(围绕均值发散)
+  const bars = document.getElementById('stats-bars');
+  const header = t => `<div style="font-size:12px;color:var(--muted);margin:0 0 6px">${t}</div>`;
+  const rowHtml = (label, count, extra) =>
+    `<div class="bar-row"><span class="bar-label" title="${label}">${label}</span>${extra}<span>${count}</span></div>`;
+
+  // 列1: 日期分布,围绕日均值上下浮动(发散式bar,颜色分方向)
+  const dayCounts = s.per_date.map(p => p.count);
+  const avg = dayCounts.length ? dayCounts.reduce((a, b) => a + b, 0) / dayCounts.length : 0;
+  const maxDev = Math.max(1, ...dayCounts.map(c => Math.abs(c - avg)));
+  const divBar = c => {
+    const dev = c - avg;
+    const w = Math.max(4, Math.round(Math.abs(dev) / maxDev * 60));
+    const color = dev >= 0 ? 'rgb(70,170,255)' : 'rgb(255,150,90)';
+    const cls = dev >= 0 ? 'up' : 'down';
+    return `<div class="div-wrap"><div class="div-center"></div><div class="bar ${cls}" style="width:${w}px;background:${color}"></div></div>`;
+  };
+  let dateHtml = header(T('stat_per_date') + (avg ? ` (${T('stat_avg_day').replace('{n}', Math.round(avg))})` : ''));
+  dateHtml += s.per_date.map(p => rowHtml(p.date, p.count, divBar(p.count))).join('');
+  if (s.older_days > 0) {
+    const olderAvg = Math.round(s.older_count / s.older_days);
+    dateHtml += rowHtml(T('stat_older').replace('{n}', s.older_days), `${s.older_count} (${T('stat_avg_day').replace('{n}', olderAvg)})`,
+      `<div class="div-wrap"><div class="div-center"></div><div class="bar" style="width:4px;background:#c3c8cf"></div></div>`);
+  }
+
+  // 列2: 冲煮方案(对数压缩 + 颜色深浅,独立比例)
+  const profCol = s.top_profiles.length ? (() => {
+    const pmax = Math.max(1, ...s.top_profiles.map(p => p.count));
+    const logW = c => Math.round(Math.log2(c + 1) / Math.log2(pmax + 1) * 110);
+    const barColor = c => { const r = c / pmax; return `rgb(70, ${Math.round(120 + r * 135)}, 255)`; };
+    let h = header(T('stat_profiles'));
+    h += s.top_profiles.map(p =>
+      rowHtml(p.name, p.count, `<div class="bar" style="width:${logW(p.count)}px;background:${barColor(p.count)}"></div>`)).join('');
+    return h;
+  })() : '';
+
+  // 列3: 豆子分布(围绕平均份额发散,与日期同视觉语言)
+  const beanCol = s.top_beans.length ? (() => {
+    const bCounts = s.top_beans.map(p => p.count);
+    const bAvg = bCounts.reduce((a, b) => a + b, 0) / bCounts.length;
+    const bMaxDev = Math.max(1, ...bCounts.map(c => Math.abs(c - bAvg)));
+    const bDiv = c => {
+      const dev = c - bAvg;
+      const w = Math.max(4, Math.round(Math.abs(dev) / bMaxDev * 60));
+      const color = dev >= 0 ? 'rgb(70,170,255)' : 'rgb(255,150,90)';
+      const cls = dev >= 0 ? 'up' : 'down';
+      return `<div class="div-wrap"><div class="div-center"></div><div class="bar ${cls}" style="width:${w}px;background:${color}"></div></div>`;
+    };
+    let h = header(T('stat_beans'));
+    h += s.top_beans.map(p => rowHtml(p.name, p.count, bDiv(p.count))).join('');
+    return h;
+  })() : '';
+
+  bars.innerHTML = `<div class="stats-cols"><div>${dateHtml}</div><div>${profCol}</div><div>${beanCol}</div></div>`;
+}
+
+async function printShot(filename) {
+  const r = await api('/api/print', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({filename: filename.replace('.json', '.png')}) });
+  toast(r.message || T('print_job_sent'));
+}
+
+// 点击缩略图查看大图(不再触发打印)
+function viewImage(filename) {
+  document.getElementById('lightbox-img').src = '/images/' + filename.replace('.json', '.png');
+  document.getElementById('lightbox').classList.add('show');
+}
+
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('show');
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+async function togglePrint() {
+  const s = await api('/api/status');
+  await api('/api/settings/print', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({enabled: !s.print_enabled}) });
+  loadStatus();
+}
+
+async function toggleBean() {
+  const s = await api('/api/status');
+  await api('/api/settings/beaninfo', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({enabled: !s.bean_info_enabled}) });
+  loadStatus();
+}
+
+async function clearQueue() {
+  await api('/api/queue', { method: 'DELETE' });
+  toast(T('clear_queue') + ' ✓');
+  loadQueue();
+}
+
+
+async function checkUpdate() {
+  const btn = document.getElementById('btn-check-update');
+  btn.disabled = true;
+  const r = await api('/api/update/check').catch(e => ({ error: String(e) }));
+  btn.disabled = false;
+  const note = document.getElementById('update-note');
+  if (r.error) { note.textContent = '❌ ' + r.error; return; }
+  const state = r.update_available ? T('update_avail') : T('update_ok');
+  note.textContent = T('update_check').replace('{local}', r.local).replace('{remote}', r.remote) + ' · ' + state;
+  document.getElementById('btn-update-service').disabled = !r.update_available;
+}
+
+async function updateService() {
+  const btn = document.getElementById('btn-update-service');
+  btn.disabled = true;
+  const r = await api('/api/update', { method: 'POST' }).catch(e => ({ success: false, message: String(e) }));
+  toast((r.success ? '🔄 ' : '❌ ') + (r.message || ''));
+  btn.disabled = false;
+}
+
+async function setLang(lang) {
+  await api('/api/language', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({language: lang}) });
+  location.reload();
+}
+
+function refreshAll() { loadStatus(); loadQueue(); loadShots(); loadStats(); }
+
+// 拖放上传
+const dz = document.getElementById('dropzone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag');
+  if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0]);
+});
+document.getElementById('drop-file').addEventListener('change', e => {
+  if (e.target.files.length) uploadFile(e.target.files[0]);
+  e.target.value = '';
+});
+
+async function uploadFile(file) {
+  const text = await file.text();
+  const r = await fetch('/upload', { method: 'POST', headers: {'Content-Type':'application/json'}, body: text });
+  const j = await r.json();
+  toast(j.status === 'success' ? `${T('upload_success')}: ${j.message}` : '❌ ' + (j.message || j.error || ''));
+  setTimeout(refreshAll, 1500);
+}
+
+// 初始化文案
+function initText() {
+  document.getElementById('title').textContent = T('server_title').replace('{VERSION}', '');
+  document.getElementById('h-status').textContent = '📊 ' + T('print_control');
+  document.getElementById('h-queue').textContent = T('print_queue');
+  document.getElementById('h-upload').textContent = '📤 ' + T('data_upload');
+  document.getElementById('h-recent').textContent = '📈 ' + T('recent_data');
+  document.getElementById('h-stats').textContent = '📊 ' + T('h_stats');
+  document.getElementById('h-plugin').textContent = '📥 ' + T('plugin_download');
+  document.getElementById('btn-clear').textContent = T('clear_queue');
+  document.getElementById('btn-refresh').textContent = '↻ ' + T('refresh');
+  document.getElementById('btn-plugin').textContent = T('plugin_local');
+  document.getElementById('btn-plugin-github').textContent = T('plugin_github');
+  document.getElementById('btn-plugin-txt').textContent = T('plugin_txt');
+  document.getElementById('plugin-note').textContent = T('plugin_note');
+  document.getElementById('h-update').textContent = '🔄 ' + T('update_title');
+  document.getElementById('btn-check-update').textContent = T('btn_check_update');
+  document.getElementById('btn-update-service').textContent = T('btn_update_service');
+  document.getElementById('update-note').textContent = T('update_note');
+  document.getElementById('dropzone').textContent = T('drag_drop');
+  document.getElementById('step1').textContent = T('plugin_step1');
+  document.getElementById('step2').textContent = T('plugin_step2');
+  document.getElementById('step3').textContent = T('plugin_step3');
+  document.getElementById('step4').textContent = T('plugin_step4');
+  document.getElementById('lang-zh').classList.toggle('active', currentLang === 'zh');
+  document.getElementById('lang-en').classList.toggle('active', currentLang === 'en');
+}
+
+initText();
+refreshAll();
+setInterval(refreshAll, 8000);
+</script>
+</body>
+</html>
