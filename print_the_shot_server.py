@@ -456,9 +456,11 @@ def clean_bean_text(text):
     if not text:
         return text
     t = str(text)
-    t = t.replace("·", ", ").replace("–", ", ").replace("—", ", ")
-    t = re.sub(r"\s*-\s*", ", ", t)          # 两侧有空格的连字符 → 逗号
-    t = re.sub(r"([一-鿿])\s*-\s*([一-鿿])", r"\1,\2", t)  # 中文间连字符 → 逗号
+    t = t.replace("·", " ").replace("–", " ").replace("—", " ")   # 间隔符去掉
+    t = t.replace("\u2011", "-")                                    # 恢复受保护的连字符
+    t = re.sub(r"(?<=\d)-(?=\d)", "\u2011", t)                    # 数字区间(3-4)保护
+    t = t.replace("-", " ")                                          # 其余连字符去掉
+    t = t.replace("\u2011", "-")
     t = re.sub(r"\s+", " ", t)
     t = re.sub(r"^[,，;；\s]+|[,，;；\s]+$", "", t)
     return t.strip()
@@ -492,7 +494,8 @@ def ai_translate(text, target_lang):
         out = ai_call([
             {"role": "system",
              "content": f"You translate coffee bean info (origin, processing, flavor notes) into {lang_name}. "
-                        f"Keep brand names, farm names and technical terms intact. Return ONLY the translation."},
+                        f"Keep brand names, farm names and technical terms intact. Be CONCISE and abbreviate where "
+                        f"natural (the text must fit a narrow chart column). Return ONLY the translation."},
             {"role": "user", "content": text},
         ], timeout=AI_TIMEOUT)
         out = clean_bean_text(out)  # 去掉连字符等无效信息 / strip hyphens & stray separators
@@ -511,6 +514,48 @@ def is_windows():
 # ---------------------------------------------------------------------------
 # 智能换行(移植自原版,逻辑一致) Smart text wrapping (ported from v1.6, same logic)
 # ---------------------------------------------------------------------------
+
+def wrap_by_width(text, font, max_width, max_lines=16):
+    """按实际渲染宽度换行:日文/中文全角字符按真实像素宽度计算,英文尽量按空格断行
+    Wrap text by measured render width: full-width CJK counted at real pixel width, space-aware for Latin"""
+    if not text:
+        return []
+    lines = []
+    for raw in str(text).split("\n"):
+        if not raw:
+            lines.append("")
+            continue
+        cur = ""
+        last_space = -1
+        for i, ch in enumerate(raw):
+            if ch.isspace():
+                last_space = i
+            if font.getlength(cur + ch) <= max_width:
+                cur += ch
+            else:
+                if last_space > 0 and len(cur) > last_space:
+                    lines.append(cur[:last_space].rstrip())
+                    cur = cur[last_space:].lstrip() + ch
+                    last_space = -1
+                else:
+                    lines.append(cur)
+                    cur = ch
+                    last_space = -1
+        lines.append(cur)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines.append("...")
+    return lines
+
+
+def fit_font(text, base_size, col_width):
+    """按文本长度调整字号,保证能放下 / pick a font size that fits the text length"""
+    size = base_size
+    while size > 12 and _font(size).getlength(str(text)) > col_width * 2.2:
+        size -= 2
+    return _font(size)
+
+
 def smart_wrap_text(text, max_cn=7, max_en=15, max_lines=12):
     """按字符数智能换行:中文按字符,英文按单词"""
     if not text:
@@ -591,7 +636,7 @@ PLOT_T = 58
 PLOT_B = 440
 COL1_X, COL1_MAXW = 905, 170     # 第一列文本(冲煮信息,贴近图表)
 COL2_X, COL2_MAXW = 1085, 211    # 第二列文本(豆子/方案信息,贴近图表)
-LINE_H = 27                       # 文本行距
+LINE_H = 26                       # 文本行距
 LEGEND_Y = 474
 
 
@@ -757,6 +802,9 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
         # ---- 画布 ---- ---- Canvas ----
         img = Image.new("L", (CHART_W, CHART_H), 255)
         draw = ImageDraw.Draw(img)
+        # 西文语言(单词长)右栏字号再小2px(左图图表不受影响)
+        # Latin-script languages: right-column fonts get -2px more since words are longer
+        latin_adj = -2 if not re.search("[一-鿿]", LANGUAGES.get(lang, {}).get("chart_pressure", "")) else 0
         font_m = _font(22)   # 8pt @ 203dpi
         font_l = _font(28)   # 10pt
         font_tick = _font(16)
@@ -833,7 +881,8 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
 
         # ---- 第一列文本(冲煮信息) ---- ---- Column 1 text (brew info) ----
         profile_title = data.get("profile", {}).get("title", t("chart_unknown_profile"))
-        profile_lines = smart_wrap_text(profile_title, 7, 14, 14)
+        profile_font = fit_font(profile_title, 20 + latin_adj, COL1_MAXW)
+        profile_lines = wrap_by_width(profile_title, profile_font, COL1_MAXW - 10, 14)
 
         meta = data.get("meta", {})
         in_weight = meta.get("in", "N/A")
@@ -872,7 +921,7 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
         col1.append((t("chart_profile"), True))
         col1.append(("──────", False))
         for line in (profile_lines or [profile_title[:7]]):
-            col1.append((line, False))
+            col1.append((line, False, profile_font))
         col1.append(("", False))
         col1.append((t("chart_extraction"), True))
         col1.append(("──────", False))
@@ -885,16 +934,18 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
         col1.append((f"{t('chart_grind_setting')}: {grinder_setting}", False))
         col1.append((f"{t('chart_initial_temp')}: {initial_temp:.1f}°C", False))
 
-        font_col1_t = _font(23)
-        font_col1 = _font(21)
+        font_col1_t = _font(22 + latin_adj)
+        font_col1 = _font(20 + latin_adj)
         y = 52
-        for text, is_title in col1:
+        for item in col1:
+            text, is_title = item[0], item[1]
+            line_font = item[2] if len(item) > 2 else None
             if text == "──────":
                 y -= LINE_H * 0.5
             elif text == "":
                 y -= LINE_H * 0.3
             else:
-                fnt = font_col1_t if is_title else font_col1
+                fnt = line_font or (font_col1_t if is_title else font_col1)
                 draw.text((COL1_X, y), text, font=fnt, fill=0,
                           stroke_width=0 if is_title else 0)
             y += LINE_H
@@ -922,23 +973,25 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
             if len(str(roast_date)) == 8 and str(roast_date).isdigit():
                 roast_info.append(f"{roast_date[:4]}-{roast_date[4:6]}-{roast_date[6:8]}")
             line3 = " ".join(roast_info)
+            def _bean_block(text):
+                """按文本长度调字号,再按渲染宽度换行 / fit font by length, wrap by width"""
+                if not text:
+                    return []
+                f = fit_font(text, 17 + latin_adj, COL2_MAXW)
+                return [(w, False, f) for w in wrap_by_width(text, f, COL2_MAXW - 10, 16)]
             for line in (line1, line2, line3):
-                if line:
-                    for wrapped in smart_wrap_text(line, 8, 16, 16):
-                        col2.append((wrapped, False))
+                col2.extend(_bean_block(line))
             shot_notes = meta.get("shot", {}).get("notes", "")
             if shot_notes:
-                col2.append(("Tasting Note (from JSON):", True))
-                col2.append(("──────", False))
-                for wrapped in smart_wrap_text(shot_notes, 8, 16, 16):
-                    col2.append((wrapped, False))
+                col2.append(("Tasting Note (from JSON):", True, None))
+                col2.append(("──────", False, None))
+                col2.extend(_bean_block(shot_notes))
         else:
             notes = data.get("profile", {}).get("notes", "")
             if notes:
-                for wrapped in smart_wrap_text(notes, 8, 16, 16):
-                    col2.append((wrapped, False))
+                col2.extend(_bean_block(notes))
             else:
-                col2.append((t("chart_na"), False))
+                col2.append((t("chart_na"), False, None))
 
         # 固定品尝笔记区域 Fixed tasting-note area
         col2.append(("", False))
@@ -948,13 +1001,15 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
             col2.append(("", False))
 
         y2 = 52
-        for text, is_title in col2:
+        for item in col2:
+            text, is_title = item[0], item[1]
+            line_font = item[2] if len(item) > 2 else None
             if text == "──────":
                 y2 -= LINE_H * 0.5
             elif text == "":
                 y2 -= LINE_H * 0.3
             else:
-                fnt = _font(20) if is_title else _font(18)
+                fnt = line_font or (_font(19 + latin_adj) if is_title else _font(17 + latin_adj))
                 draw.text((COL2_X, y2), text, font=fnt, fill=0,
                           stroke_width=0 if is_title else 0)
             y2 += LINE_H
@@ -1442,7 +1497,8 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
                 return
             # 批量翻译EN文案 → JSON(AI理解语言名称,任意写法均可)
             prompt = ("Translate the following JSON object of UI strings into " + name +
-                      ". Keep {placeholders} intact. "
+                      ". Keep {placeholders} intact. Be CONCISE and abbreviate where natural "
+                      "(labels must fit a narrow chart column). "
                       "Return ONLY valid JSON with the same keys.")
             out = ai_call([{"role": "system", "content": prompt},
                            {"role": "user", "content": json.dumps(LANGUAGES["en"], ensure_ascii=False)}],
