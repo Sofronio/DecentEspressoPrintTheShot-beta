@@ -264,10 +264,18 @@ function initLangPresets() {
 
 async function addLanguage() {
   const name = document.getElementById('lang-name').value.trim();
-  if (!name) { toast('❌ ' + (L.ai_lang_hint || 'language name required')); return; }
-  const r = await api('/api/languages', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name: name}) });
-  toast((r.success ? '✅ ' : '❌ ') + (r.message || ''));
-  if (r.success) { document.getElementById('lang-name').value = ''; location.reload(); }
+  const note = document.getElementById('ai-note');
+  if (!name) { note.textContent = '❌ ' + (L.ai_lang_hint || 'language name required'); return; }
+  const btn = document.getElementById('btn-add-lang');
+  btn.disabled = true;
+  btn.textContent = '⏳';
+  note.textContent = '⏳ ' + (L.ai_translating || 'translating UI strings via AI, ~10-30s...');
+  const r = await api('/api/languages', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name: name}) })
+    .catch(e => ({ success: false, message: String(e) }));
+  btn.disabled = false;
+  btn.textContent = L.btn_add_lang || 'Add';
+  note.textContent = (r.success ? '✅ ' : '❌ ') + (r.message || '');
+  if (r.success) setTimeout(() => location.reload(), 900);
 }
 
 // 翻译当前曲线内容(豆子信息→当前语言,重渲染) / translate this shot's chart content
@@ -306,8 +314,7 @@ async function api(path, opts) {
 async function loadStatus() {
   const s = await api('/api/status');
   document.getElementById('subtitle').textContent = `${T('status_running')} · v${s.version}`;
-  const grid = document.getElementById('status-grid');
-  grid.innerHTML = [
+  const items = [
     [T('status_running'), s.status, ''],
     [T('start_time'), s.start_time, ''],
     [T('shots_received'), s.shots_received, ''],
@@ -315,7 +322,18 @@ async function loadStatus() {
     [T('max_users'), s.max_users, ''],
     [T('print_enabled'), s.print_enabled ? '✅' : '🚫', s.print_enabled ? 'ok' : 'off'],
     [T('bean_info_enabled'), s.bean_info_enabled ? '✅' : '🚫', s.bean_info_enabled ? 'ok' : 'off'],
-  ].map(([label, value, cls]) =>
+  ];
+  // AI余额(配置了key才显示) / AI balance (shown when a key is set)
+  try {
+    const ai = await api('/api/settings/ai');
+    if (ai.key_set) {
+      const bal = await api('/api/ai/balance');
+      items.push([T('stat_ai_balance'),
+        bal.success ? `💰 ${bal.balance} ${bal.currency}` : '—', '']);
+    }
+  } catch (e) {}
+  const grid = document.getElementById('status-grid');
+  grid.innerHTML = items.map(([label, value, cls]) =>
     `<div class="stat"><div class="label">${label}</div><div class="value ${cls}">${value}</div></div>`).join('');
   document.getElementById('btn-print').textContent = s.print_enabled ? T('disable_print') : T('enable_print');
   document.getElementById('btn-print').classList.toggle('green', !s.print_enabled);
