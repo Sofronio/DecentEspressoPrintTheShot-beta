@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-PrintTheShot Beta - 轻量版服务器
-================================
-相比原版(v1.6)的改进:
-  * 去除 matplotlib / numpy 依赖,图表用 PIL(ImageDraw) 直绘
-  * 内置 Noto Sans CJK 中文字体,跨平台输出一致,无需系统字体发现
-  * web 管理界面改为独立模板文件(web/index.html)
-  * PyInstaller 打包更小更快;GitHub Actions 三平台自动构建
+PrintTheShot Beta - lightweight server
+======================================
+Improvements over v1.6:
+  * No matplotlib/numpy — charts drawn directly with PIL (ImageDraw)
+  * Bundled Noto Sans CJK font — consistent output everywhere, no system font discovery
+  * Web UI moved to a standalone template (web/index.html)
+  * Smaller/faster PyInstaller packages; automated 3-platform builds via GitHub Actions
 
-依赖: 仅 pillow
-运行: python print_the_shot_server.py            (默认端口 8000)
-       python print_the_shot_server.py --render shot.json out.png   (仅渲染图表,用于测试)
+Dependencies: pillow only
+Run: python print_the_shot_server.py            (default port 8000)
+     python print_the_shot_server.py --render shot.json out.png   (render only, for testing)
 """
 
 import os
@@ -40,7 +40,7 @@ print_jobs = []  # 内存打印队列 / in-memory print queue
 server_start_time = datetime.now()
 
 # ---------------------------------------------------------------------------
-# 资源路径:兼容源码运行与 PyInstaller 打包运行
+# 资源路径:兼容源码运行与 PyInstaller 打包运行 Resource paths: work both from source and from PyInstaller bundles
 # ---------------------------------------------------------------------------
 def resource_path(rel):
     if getattr(sys, "frozen", False):
@@ -85,13 +85,13 @@ def perform_update(zip_url, base_dir, lang="zh"):
         new_server = get("print_the_shot_server.py")
         new_web = get("web/index.html")
         new_plugin = get("plugin/plugin.tcl")
-        # 校验
+        # 校验 Validation
         if not new_server or b"def main()" not in new_server or b"PrintTheShot" not in new_server:
             return False, ("下载内容异常,已取消" if lang == "zh" else "Downloaded content invalid, aborted")
         if not new_web or b"{{LANG}}" not in new_web:
             return False, ("web模板异常,已取消" if lang == "zh" else "Web template invalid, aborted")
 
-        # 备份(排除fonts:体积大且极少变更)
+        # 备份(排除fonts:体积大且极少变更) Backup (excluding fonts: large and rarely changes)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_dir = os.path.join(base_dir, "backup", ts)
         os.makedirs(backup_dir, exist_ok=True)
@@ -106,7 +106,7 @@ def perform_update(zip_url, base_dir, lang="zh"):
             os.makedirs(os.path.join(backup_dir, "plugin"), exist_ok=True)
             shutil.copy2(runtime_plugin, os.path.join(backup_dir, "plugin", "plugin.tcl"))
 
-        # 写入新文件
+        # 写入新文件 Write new files
         with open(os.path.join(base_dir, "print_the_shot_server.py"), "wb") as f:
             f.write(new_server)
         with open(os.path.join(base_dir, "web", "index.html"), "wb") as f:
@@ -134,7 +134,7 @@ def plugin_runtime_path():
     return runtime_path
 
 # ---------------------------------------------------------------------------
-# 多语言 / i18n
+# 多语言 / i18n i18n / Localization
 # ---------------------------------------------------------------------------
 LANGUAGES = {
     "en": {
@@ -325,7 +325,7 @@ def is_windows():
 
 
 # ---------------------------------------------------------------------------
-# 智能换行(移植自原版,逻辑一致)
+# 智能换行(移植自原版,逻辑一致) Smart text wrapping (ported from v1.6, same logic)
 # ---------------------------------------------------------------------------
 def smart_wrap_text(text, max_cn=7, max_en=15, max_lines=12):
     """按字符数智能换行:中文按字符,英文按单词"""
@@ -333,7 +333,7 @@ def smart_wrap_text(text, max_cn=7, max_en=15, max_lines=12):
         return []
     text = str(text)
 
-    # 检测文本类型
+    # 检测文本类型 Detect text type
     chinese_count = sum(1 for c in text if "一" <= c <= "鿿")
     if len(text) == 0:
         return []
@@ -360,7 +360,7 @@ def smart_wrap_text(text, max_cn=7, max_en=15, max_lines=12):
             text, width=width, break_long_words=False,
             break_on_hyphens=True, drop_whitespace=True, replace_whitespace=True,
         )
-        # 处理极长单词
+        # 处理极长单词 Handle extremely long words
         final_lines = []
         for line in lines:
             if len(line) > width * 1.5:
@@ -392,12 +392,12 @@ def smart_wrap_text(text, max_cn=7, max_en=15, max_lines=12):
 
 
 # ---------------------------------------------------------------------------
-# PIL 图表渲染(替代 matplotlib)
+# PIL 图表渲染(替代 matplotlib) PIL chart rendering (replaces matplotlib)
 # ---------------------------------------------------------------------------
-# 画布 1296x576(与 v1.6 输出一致,203dpi 下的 6.38x2.84 英寸)
+# 画布 1296x576(与 v1.6 输出一致,203dpi 下的 6.38x2.84 英寸) Canvas 1296x576 (same output as v1.6, 6.38x2.84 inches at 203dpi)
 CHART_W, CHART_H = 1296, 576
-# 几何布局(像素)。左侧预留带:温度标题(0-22)|温度刻度(→46)|温度轴(52)|
-# 压力标题(56-78)|压力刻度(→94)|压力轴(98)|绘图区(104-850)
+# 几何布局(像素)。左侧预留带:温度标题(0-22)|温度刻度(→46)|温度轴(52)| Geometry (pixels)
+# 压力标题(56-78)|压力刻度(→94)|压力轴(98)|绘图区(104-850) pressure title(56-78)|pressure ticks(->94)|pressure axis(98)|plot(104-850)
 AX_TEMP_X = 62      # 温度轴(最左)
 AX_PRES_X = 112     # 压力轴(绘图y轴)
 AX_FLOW_X = 854     # 流速轴(最右)
@@ -428,12 +428,12 @@ def _vtext(img, draw, x, y_center, text, font, fill=0):
     w, h = bb[2] - bb[0], bb[3] - bb[1]
     if w <= 0 or h <= 0:
         return
-    # 字形=白色(作为mask),背景=0(透明)
+    # 字形=白色(作为mask),背景=0(透明) glyphs = white (used as mask), background = 0 (transparent)
     tmp = Image.new("L", (w + 4, h + 4), 0)
     td = ImageDraw.Draw(tmp)
     td.text((2 - bb[0], 2 - bb[1]), text, font=font, fill=255)
     tmp = tmp.rotate(90, expand=True)
-    # 用tmp作mask:只在字形位置写入 fill(黑),其余保持原图
+    # 用tmp作mask:只在字形位置写入 fill(黑),其余保持原图 Use tmp as a mask: write fill (black) only where glyphs are, keep the rest intact
     img.paste(fill, (x, int(y_center - tmp.height / 2)), mask=tmp)
 
 
@@ -531,11 +531,11 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
         if lang != current_language:
             current_language = lang
 
-        # ---- 数据提取与对齐(空序列自动忽略,避免原版空by_weight崩溃) ----
+        # ---- 数据提取与对齐(空序列自动忽略,避免原版空by_weight崩溃) ---- ---- Data extraction & alignment (ignore empty series; avoids the v1.6 empty-by_weight crash) ----
         elapsed = [float(v) for v in data["elapsed"]]
         pressure = [float(v) for v in data["pressure"]["pressure"]]
         flow = [float(v) for v in data["flow"]["flow"]]
-        # by_weight 为空时回退到 by_weight_raw(部分固件版本写入不同字段)
+        # by_weight 为空时回退到 by_weight_raw(部分固件版本写入不同字段) Fall back to by_weight_raw when by_weight is empty (some firmware versions use a different field)
         by_weight = [float(v) for v in (data["flow"].get("by_weight") or data["flow"].get("by_weight_raw", []))]
         basket_temp = [float(v) for v in data["temperature"]["basket"]]
 
@@ -553,8 +553,8 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
             by_weight = by_weight[:min_length]
         basket_temp = basket_temp[:min_length]
 
-        # 剔除起点毛刺:若某曲线首两点跳变超过数据范围的一半(如温度93→83),
-        # 丢弃首采样点,避免x=0处出现竖直"速降"线;曲线自然从y轴附近出发
+        # 剔除起点毛刺:若某曲线首两点跳变超过数据范围的一半(如温度93→83), Drop start glitch
+        # 丢弃首采样点,避免x=0处出现竖直"速降"线;曲线自然从y轴附近出发 drop the first sample to avoid a vertical 'plunge' at x=0; curves then start naturally near the y-axis
         def _start_glitch(vals):
             rng = max(vals) - min(vals)
             return len(vals) > 1 and rng > 0 and abs(vals[0] - vals[1]) > 0.5 * rng
@@ -570,7 +570,7 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
         max_time = elapsed[-1] if elapsed else 30
         x_scale = (PLOT_R - PLOT_L) / max(max_time, 0.1)
 
-        # ---- 画布 ----
+        # ---- 画布 ---- ---- Canvas ----
         img = Image.new("L", (CHART_W, CHART_H), 255)
         draw = ImageDraw.Draw(img)
         font_m = _font(22)   # 8pt @ 203dpi
@@ -578,15 +578,15 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
         font_tick = _font(16)
         font_legend = _font(17)
 
-        # ---- 坐标轴 ----
+        # ---- 坐标轴 ---- ---- Axes ----
         for ax in (AX_TEMP_X, AX_PRES_X, AX_FLOW_X):
             draw.line((ax, PLOT_T, ax, PLOT_B), fill=0, width=2)
-        # x轴(时间)从左端y轴起画,三个y轴原点都与x轴重合
+        # x轴(时间)从左端y轴起画,三个y轴原点都与x轴重合 Time axis starts from the leftmost y-axis; all three y-axis origins coincide with the x-axis
         draw.line((AX_PRES_X, PLOT_B, PLOT_R, PLOT_B), fill=0, width=2)  # x轴从压力y轴起画
 
-        # ---- 网格与刻度:温度0-100(最左),压力0-10(左),流速0-10(右) ----
-        # 每轴的刻度右对齐到自己的轴(anchor="rm"/"lm" 以刻度线垂直居中),
-        # 各轴刻度带互不重叠:57 / 108 / 858
+        # ---- 网格与刻度:温度0-100(最左),压力0-10(左),流速0-10(右) ---- ---- Grid & ticks
+        # 每轴的刻度右对齐到自己的轴(anchor="rm"/"lm" 以刻度线垂直居中), Each axis's tick labels right-align to its own axis
+        # 各轴刻度带互不重叠:57 / 108 / 858 Tick bands never overlap: 57 / 108 / 858
         for axis, ymax, label_x, align in (
             (AX_TEMP_X, 100, 57, "rm"),   # "100"宽27px → 起点30,与标题(0-17)留13px
             (AX_PRES_X, 10, 108, "rm"),   # "10"宽18px → 起点90,与标题(66-83)留7px
@@ -600,7 +600,7 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
                 draw.line((axis - 4, iy, axis, iy), fill=0, width=1)
                 draw.text((label_x, iy), str(int(v)), font=font_tick, fill=0, anchor=align)
 
-        # ---- 时间轴刻度(下方) ----
+        # ---- 时间轴刻度(下方) ---- ---- Time-axis ticks (below) ----
         x_ticks = _nice_ticks(0, max_time)
         for v in x_ticks:
             ix = PLOT_L + v * x_scale
@@ -608,14 +608,14 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
             _dash_line(draw, ix, PLOT_T, ix, PLOT_B, width=1, pattern=(10, 10))
             draw.text((ix, PLOT_B + 6), str(int(v)), font=font_tick, fill=0, anchor="mt")
 
-        # ---- 四条曲线(实线/虚线/点线/点划线) ----
+        # ---- 四条曲线(实线/虚线/点线/点划线) ---- ---- Four curves (solid/dashed/dotted/dash-dot) ----
         _plot_curve_style(draw, elapsed, pressure, x_scale, 10, "solid")
         _plot_curve_style(draw, elapsed, flow, x_scale, 10, "dashed")
         if by_weight:
             _plot_curve_style(draw, elapsed, by_weight, x_scale, 10, "dotted")
         _plot_curve_style(draw, elapsed, basket_temp, x_scale, 100, "dashdot")
 
-        # ---- 图例(4列,下方) ----
+        # ---- 图例(4列,下方) ---- ---- Legend (4 columns, below) ----
         legend_items = [
             ("solid", t("chart_pressure")),
             ("dashed", t("chart_water_flow")),
@@ -636,7 +636,7 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
             draw.text((lx + 36, LEGEND_Y - 9), label, font=font_legend, fill=0)
             lx += 36 + _text_w(draw, font_legend, label) + 34
 
-        # ---- 机器ID(左下角,方框按文字实际尺寸+内边距,紧贴图例) ----
+        # ---- 机器ID(左下角,方框按文字实际尺寸+内边距,紧贴图例) ---- ---- Machine ID (bottom-left, box sized to text + padding, snug below legend) ----
         mid = t("machine_id") + machine_id
         if mid.strip():
             bb = draw.textbbox((0, 0), mid, font=font_tick)
@@ -647,7 +647,7 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
                                    radius=4, outline=0, width=1)
             draw.text((bx + pad - bb[0], by + pad - bb[1]), mid, font=font_tick, fill=0)
 
-        # ---- 第一列文本(冲煮信息) ----
+        # ---- 第一列文本(冲煮信息) ---- ---- Column 1 text (brew info) ----
         profile_title = data.get("profile", {}).get("title", t("chart_unknown_profile"))
         profile_lines = smart_wrap_text(profile_title, 7, 14, 14)
 
@@ -657,7 +657,7 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
         shot_time = meta.get("time", "N/A")
         grinder_setting = meta.get("grinder", {}).get("setting", "N/A")
 
-        # 日期时间(优先用timestamp,与原版一致)
+        # 日期时间(优先用timestamp,与原版一致) Date/time (timestamp first, same as v1.6)
         formatted_date = formatted_time = "N/A"
         ts = data.get("timestamp", "")
         if ts:
@@ -715,7 +715,7 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
                           stroke_width=0 if is_title else 0)
             y += LINE_H
 
-        # ---- 第二列文本(豆子信息或方案信息) ----
+        # ---- 第二列文本(豆子信息或方案信息) ---- ---- Column 2 text (bean info or profile info) ----
         bean_data = meta.get("bean", {}) or {}
         has_bean_info = bool(bean_data and (bean_data.get("brand") or bean_data.get("type") or bean_data.get("notes")))
 
@@ -756,7 +756,7 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
             else:
                 col2.append((t("chart_na"), False))
 
-        # 固定品尝笔记区域
+        # 固定品尝笔记区域 Fixed tasting-note area
         col2.append(("", False))
         col2.append((t("chart_tasting_note"), True))
         col2.append(("──────", False))
@@ -775,20 +775,20 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
                           stroke_width=0 if is_title else 0)
             y2 += LINE_H
 
-        # ---- 轴标题(竖向,17px=与图例同大;在 img.save 前最后绘制,盖住轴与刻度) ----
-        # 温度/压力完全脱离数字(数字起点30/90);流速贴轴
+        # ---- 轴标题(竖向,17px=与图例同大;在 img.save 前最后绘制,盖住轴与刻度) ---- ---- Axis titles (vertical, 17px = legend size; drawn last before img.save, on top of axes & ticks) ----
+        # 温度/压力完全脱离数字(数字起点30/90);流速贴轴 Temp/pressure titles fully clear of numbers (start 30/90); flow hugs the axis
         font_axis = _font(17)
 
         def _draw_axis_titles():
-            # 位置经变体对比定稿:温度16(近"100"左缘30,与"90"左缘39保持间距)、压力74(贴"9"左缘99附近)
+            # 位置经变体对比定稿:温度16(近"100"左缘30,与"90"左缘39保持间距)、压力74(贴"9"左缘99附近) Final positions chosen via variant comparison
             _vtext(img, draw, 16, (PLOT_T + PLOT_B) / 2, t("chart_temperature"), font_axis)
             _vtext(img, draw, 74, (PLOT_T + PLOT_B) / 2, t("chart_pressure"), font_axis)
             _vtext(img, draw, 866, (PLOT_T + PLOT_B) / 2, t("chart_flow"), font_axis)
 
         _draw_axis_titles()
 
-        # 所有内容绘制完成后,再补画一次轴标题:
-        # 防止右侧文本块等任何后续绘制覆盖流速标题
+        # 所有内容绘制完成后,再补画一次轴标题: Draw the axis titles once more after everything else:
+        # 防止右侧文本块等任何后续绘制覆盖流速标题 prevent any later drawing (e.g. the right text columns) from covering the flow title
         _draw_axis_titles()
 
         img.save(output_path, "PNG")
@@ -824,7 +824,7 @@ def generate_print_image(png_path):
 
 
 # ---------------------------------------------------------------------------
-# 打印(Windows: ctypes GDI;macOS/Linux: lpr/lp)
+# 打印(Windows: ctypes GDI;macOS/Linux: lpr/lp) Printing (Windows: ctypes GDI; macOS/Linux: lpr/lp)
 # ---------------------------------------------------------------------------
 def windows_print_bmp(bmp_path):
     """纯ctypes调用Windows打印API(无pywin32依赖)"""
@@ -860,7 +860,7 @@ def windows_print_bmp(bmp_path):
 
         with open(bmp_path, "rb") as f:
             bmp_data = f.read()
-        # BMP按行扫描,无需DIB转换
+        # BMP按行扫描,无需DIB转换 BMP scanned row-wise, no DIB conversion needed
         winspool.StartPagePrinter(hprinter)
         written = wintypes.DWORD(0)
         chunk = 65536
@@ -913,7 +913,7 @@ def print_image(image_path):
 
 
 # ---------------------------------------------------------------------------
-# HTTP 服务器
+# HTTP 服务器 HTTP Server
 # ---------------------------------------------------------------------------
 class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -922,7 +922,7 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {fmt % args}")
 
-    # ---------- 工具 ----------
+    # ---------- 工具 ---------- ---------- Helpers ----------
     def _send_json(self, obj, code=200):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
@@ -973,7 +973,7 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
         elif path == "/plugin/plugin.tcl":
             self._serve_file(plugin_runtime_path(), "application/x-tcl", as_attachment=True)
         elif path == "/plugin/plugin.tcl.txt":
-            # TXT版:蓝牙发送时安卓端常拒绝无扩展名/.tcl文件,tcl.txt可正常传输
+            # TXT版:蓝牙发送时安卓端常拒绝无扩展名/.tcl文件,tcl.txt可正常传输 TXT version: Android often rejects extension-less/.tcl files over Bluetooth; tcl.txt transfers fine
             self._serve_file(plugin_runtime_path(), "text/plain", as_attachment=True,
                              download_name="tcl.txt")
         elif path.startswith("/download/json/"):
@@ -1013,14 +1013,16 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
         else:
             self.send_error(404, "Endpoint not found")
 
-    # ---------- 页面 ----------
+    # ---------- 页面 ---------- ---------- Pages ----------
     def show_index(self):
         global current_language
         try:
             with open(WEB_INDEX, "r", encoding="utf-8") as f:
                 html = f.read()
             html = html.replace("{{VERSION}}", VERSION)
-            html = html.replace("{{LANG}}", json.dumps(LANGUAGES[current_language], ensure_ascii=False))
+            lang_json = json.dumps(LANGUAGES[current_language], ensure_ascii=False)
+            lang_json = lang_json.replace("'", "&#39;")  # 防单引号破坏JS字符串(can't 之类)
+            html = html.replace("{{LANG}}", lang_json)
             body = html.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
@@ -1075,7 +1077,7 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
         beans = collections.Counter(s.get("bean", "未知") for s in shots)
         machines = len({s.get("machine_id") for s in shots})
         avg_size = int(sum(s.get("data_size", 0) for s in shots) / total) if total else 0
-        # 日期分布只展示最近7天,更早的合并为一行,避免列过长
+        # 日期分布只展示最近7天,更早的合并为一行,避免列过长 Date distribution shows only the latest 7 days; older ones merge into one row to avoid a long list
         per_date_list = [{"date": f"{d[:4]}-{d[4:6]}-{d[6:8]}", "count": c}
                          for d, c in sorted(per_date.items(), reverse=True)]
         recent, older = per_date_list[:7], per_date_list[7:]
@@ -1164,17 +1166,17 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             req = urllib.request.Request(PLUGIN_GITHUB_URL, headers={"User-Agent": "PrintTheShotBeta"})
             with urllib.request.urlopen(req, timeout=20) as r:
                 new_data = r.read()
-            # 基本校验:必须含插件标识,否则视为下载异常
+            # 基本校验:必须含插件标识,否则视为下载异常 Basic validation: must contain the plugin marker, else treat as a bad download
             if len(new_data) < 500 or b"print_the_shot" not in new_data:
                 self._send_json({"success": False, "message": "下载内容异常,已取消"})
                 return
             runtime_path = plugin_runtime_path()
-            # 备份当前插件
+            # 备份当前插件 Back up the current plugin
             backup = runtime_path + f".bak_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             if os.path.exists(runtime_path):
                 import shutil
                 shutil.copy2(runtime_path, backup)
-            # 写入新插件
+            # 写入新插件 Write new plugin
             with open(runtime_path, "wb") as f:
                 f.write(new_data)
             msg = f"插件已更新(旧版备份: {os.path.basename(backup)})"
@@ -1211,7 +1213,7 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             if len(print_jobs) > 20:
                 del print_jobs[:-20]
 
-    # ---------- 上传 ----------
+    # ---------- 上传 ---------- ---------- Upload ----------
     def handle_upload(self):
         global current_language
         try:
@@ -1230,13 +1232,13 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             q = urllib.parse.parse_qs(parsed.query)
             machine_id = q.get("machine_id", ["UNKNOWN"])[0]
 
-            shot_id = time.time_ns() // 1000  # 微秒级唯一ID,避免同秒上传撞车
+            shot_id = time.time_ns() // 1000  # 微秒级唯一ID,避免同秒上传撞车 microsecond-unique ID to avoid same-second filename collisions
             filename = f"shot_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{shot_id}.json"
             filepath = os.path.join(DATA_DIR, filename)
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(shot_data, f, ensure_ascii=False, indent=2)
 
-            # 先应答,再后台渲染+打印
+            # 先应答,再后台渲染+打印 Respond first, then render + print in the background
             self._send_json({
                 "status": "success", "id": shot_id,
                 "message": f"Shot data received and saved as {filename}",
@@ -1288,7 +1290,7 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             received_shots.append(shot_info)
             if len(received_shots) > 5000:
                 del received_shots[:-1000]
-        persist_index()  # 锁外调用,避免与内部锁死锁;持久化历史,重启不丢
+        persist_index()  # 锁外调用,避免与内部锁死锁;持久化历史,重启不丢 called outside the lock to avoid a deadlock with the inner lock; persists history across restarts
 
         if PRINT_ENABLED and ok:
             print("🖨️ 开始后台打印...")
@@ -1296,7 +1298,7 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
 
 
 # ---------------------------------------------------------------------------
-# 入口
+# 入口 Entry
 # ---------------------------------------------------------------------------
 def ensure_directories():
     for directory in (DATA_DIR, IMAGE_DIR):
@@ -1326,7 +1328,7 @@ def load_history():
             print(f"⚠️ index.json 读取失败,将重建: {e}")
             restored = []
 
-    # 目录扫描:补上索引里没有的文件(机器ID无法从文件恢复,标 UNKNOWN)
+    # 目录扫描:补上索引里没有的文件(机器ID无法从文件恢复,标 UNKNOWN) Directory scan: fill in files missing from the index (machine ID can't be recovered from files, marked UNKNOWN)
     known = {s.get("filename") for s in restored}
     try:
         for fn in sorted(os.listdir(DATA_DIR)):
@@ -1356,7 +1358,7 @@ def load_history():
     except FileNotFoundError:
         pass
 
-    # 补齐旧索引条目缺失的 bean 字段(解析JSON文件,一次性)
+    # 补齐旧索引条目缺失的 bean 字段(解析JSON文件,一次性) Backfill the bean field for old index entries (parse JSON files, one-time)
     for s in restored:
         if "bean" not in s:
             try:

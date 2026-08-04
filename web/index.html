@@ -29,10 +29,10 @@
   .bar-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666; margin: 4px 0; }
   .bar-row .bar { height: 10px; background: var(--accent); border-radius: 3px; min-width: 2px; }
   .bar-row .bar-label { width: 100px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  /* 统计三列一行:日期 | 冲煮方案 | 豆子 */
+  /* 统计三列一行:日期 | 冲煮方案 | 豆子 / statistics: date | profile | bean */
   .stats-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
   @media (max-width: 900px) { .stats-cols { grid-template-columns: 1fr; } }
-  /* 发散式bar(围绕均值) */
+  /* 发散式bar(围绕均值) / diverging bars (around the mean) */
   .div-wrap { position: relative; flex: 1; height: 12px; }
   .div-center { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: #d8dce2; }
   .div-wrap .bar { position: absolute; top: 1px; height: 10px; border-radius: 3px; min-width: 0; }
@@ -50,7 +50,7 @@
   .btn:disabled { opacity: .45; cursor: not-allowed; }
   .dropzone { border: 2px dashed #b8c4d8; border-radius: 10px; padding: 26px; text-align: center; color: var(--muted); cursor: pointer; background: #fafbfe; }
   .dropzone.drag { background: #eef3fc; border-color: var(--accent); color: var(--accent); }
-  .shot-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }  /* 固定3列: 9条=3x3, 18条=3x6 */
+  .shot-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }  /* 固定3列: 9条=3x3, 18条=3x6 / fixed 3 columns: 9 = 3x3, 18 = 3x6 */
   .shot { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #fff; }
   .shot img { width: 100%; display: block; background: #fff; }
   .shot .meta { padding: 10px 12px; font-size: 12px; color: var(--muted); }
@@ -64,7 +64,7 @@
   .empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #2d333d; color: #fff; padding: 10px 22px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 99; }
   .toast.show { opacity: 1; }
-  /* 大图查看 */
+  /* 大图查看 / large image view */
   .lightbox { position: fixed; inset: 0; background: rgba(20,22,28,.93); display: none; align-items: center; justify-content: center; z-index: 100; cursor: zoom-out; }
   .lightbox.show { display: flex; }
   .lightbox img { max-width: 94vw; max-height: 92vh; background: #fff; border-radius: 4px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
@@ -86,7 +86,7 @@
 </header>
 
 <main>
-  <!-- 状态 -->
+  <!-- 状态 / Status -->
   <div class="card">
     <h2 id="h-status"></h2>
     <div class="status-grid" id="status-grid"></div>
@@ -97,20 +97,20 @@
     </div>
   </div>
 
-  <!-- 打印队列 -->
+  <!-- 打印队列 / Print queue -->
   <div class="card">
     <h2><span id="h-queue"></span><button class="btn red" onclick="clearQueue()" id="btn-clear"></button></h2>
     <div id="queue-list"></div>
   </div>
 
-  <!-- 上传 -->
+  <!-- 上传 / Upload -->
   <div class="card">
     <h2 id="h-upload"></h2>
     <div class="dropzone" id="dropzone" onclick="document.getElementById('drop-file').click()"></div>
     <input type="file" id="drop-file" accept=".json,application/json">
   </div>
 
-  <!-- 最近数据(日期 + 翻页,历史持久化) -->
+  <!-- 最近数据(日期 + 翻页,历史持久化) / Recent data (date filter + pagination, persisted) -->
   <div class="card">
     <h2><span id="h-recent"></span></h2>
     <div class="list-bar">
@@ -129,14 +129,14 @@
     <div class="shot-grid" id="shot-grid"></div>
   </div>
 
-  <!-- 统计数据 -->
+  <!-- 统计数据 / Statistics -->
   <div class="card">
     <h2 id="h-stats"></h2>
     <div class="stats-row" id="stats-grid"></div>
     <div style="margin-top:14px" id="stats-bars"></div>
   </div>
 
-  <!-- 插件下载 -->
+  <!-- 插件下载 / plugin download -->
   <div class="card">
     <h2 id="h-plugin"></h2>
     <p>
@@ -153,7 +153,7 @@
     </ol>
   </div>
 
-  <!-- 服务更新 -->
+  <!-- 服务更新 / service update -->
   <div class="card">
     <h2 id="h-update"></h2>
     <p>
@@ -164,7 +164,7 @@
   </div>
 </main>
 
-<!-- 大图查看 -->
+<!-- 大图查看 / large image view -->
 <div class="lightbox" id="lightbox" onclick="closeLightbox()">
   <span class="close">✕</span>
   <img id="lightbox-img" alt="large chart">
@@ -173,7 +173,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const L = JSON.parse('{{LANG}}'.replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
+const L = JSON.parse('{{LANG}}'.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#39;/g, "'"));
 let currentLang = L.language || 'zh';
 
 function T(key) { return L[key] || key; }
