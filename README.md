@@ -4,13 +4,13 @@
 
 ## 截图
 
+**打印效果**(模拟数据渲染,横屏 PNG)
+
+<img src="screenshots/print_sample.png" width="760" alt="打印效果">
+
 **Web 管理界面**
 
-![Web 管理界面](screenshots/webui.png)
-
-**打印效果**(模拟数据渲染,供排版参考)
-
-![打印效果](screenshots/print_sample_printed.png)
+<img src="screenshots/webui.png" width="600" alt="Web 管理界面">
 
 ---
 
