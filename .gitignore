@@ -21,3 +21,8 @@ backup/
 # 敏感设置与翻译缓存
 settings.json
 translations.json
+
+# 厂商SDK反编译分析(本地参考,不发布)
+
+# 本地提醒文档(不入库)
+docs/REMINDERS.md
