@@ -29,7 +29,7 @@ from datetime import datetime
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 
-VERSION = "2.0-beta"
+VERSION = "2.0-beta.2"
 DATA_DIR = "shots_data"
 IMAGE_DIR = "shots_images"
 PRINT_ENABLED = True
