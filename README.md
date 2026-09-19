@@ -43,8 +43,56 @@ No Python needed — grab your platform's file from the [Releases page](https://
 | Platform | File | How to run |
 |---|---|---|
 | Windows | `PrintTheShot-windows-x64.exe` | double-click, then open `http://localhost:8000` |
-| macOS | `PrintTheShot-macos.zip` | unzip → double-click `PrintTheShot.app`, then open `http://localhost:8000` |
+| macOS (Apple Silicon) | `PrintTheShot-macos-arm64.zip` | unzip → double-click `PrintTheShot.app`, then open `http://localhost:8000` |
+| macOS (Intel) | `PrintTheShot-macos-intel.zip` | same |
 | Linux | `PrintTheShot-linux` | `chmod +x PrintTheShot-linux && ./PrintTheShot-linux`, then open `http://localhost:8000` |
+
+> **First launch on macOS.** The app is not notarized (that needs a paid Apple
+> Developer account), so macOS will refuse the first launch with
+> *"cannot be opened because the developer cannot be verified"*. Allow it once:
+>
+> ```bash
+> xattr -dr com.apple.quarantine /Applications/PrintTheShot.app
+> ```
+>
+> or go to **System Settings → Privacy & Security**, scroll to Security, and click
+> **Open Anyway**.
+>
+> This is *not* the same as *"the app is damaged"* — that message means the code
+> signature itself failed and cannot be bypassed. If you see it, you have an old
+> build; re-download.
+
+> **Stopping it.** As a background service it has no window and (by design, see
+> below) no Dock icon, so there is nothing to right-click. To stop it:
+>
+> ```bash
+> pkill -f PrintTheShot.app          # or: kill $(pgrep -f PrintTheShot.app)
+> ```
+>
+> To check whether it is running: `curl localhost:8000/api/status`, or look for
+> `PrintTheShot` in Activity Monitor.
+
+> **Stopping it from the web UI.** A packaged **macOS** build shows a red **Stop
+> service** button in the status card (top right). It appears only there: a packaged
+> macOS app is the one configuration with no other way to stop it (no Dock icon, no
+> window, no terminal). Windows has a console window to close and Linux is normally
+> run from a terminal. It asks for confirmation, then shuts the server down. The page is
+> replaced with a "service stopped" notice, because everything on it stops working
+> at that point — that is expected, not an error.
+>
+> To start it again, launch the app again.
+>
+> Note this endpoint is **not restricted by source IP**: anything on the same network
+> can reach it. That is fine on a home LAN; on a shared network, tighten
+> `_allow_shutdown()` in `print_the_shot_server.py`.
+
+> **How do I know it is running?** The web UI opens in your browser automatically
+> when the app starts. If you closed that tab, the service is still running and you
+> can reopen it at <http://localhost:8000>.
+>
+> It also writes a log to
+> `~/Library/Application Support/PrintTheShot/server.log` — that is where to look if
+> it fails to start, since a packaged app has no terminal to print to.
 
 > The binaries are **built automatically by GitHub Actions** whenever a `v*` tag is pushed (e.g. `git tag v2.0-beta.2 && git push origin v2.0-beta.2`) — check the [Actions page](https://github.com/Sofronio/DecentEspressoPrintTheShot-beta/actions) for build status and the Releases page for the newest packages.
 
@@ -124,7 +172,8 @@ Release assets (auto-generated per tag):
 | File | Platform | Notes |
 |---|---|---|
 | `PrintTheShot-linux` | Linux | run from terminal |
-| `PrintTheShot-macos.zip` | macOS | unzip → `PrintTheShot.app`, double-click to run |
+| `PrintTheShot-macos-arm64.zip` | macOS (Apple Silicon) | unzip → `PrintTheShot.app`, double-click to run |
+| `PrintTheShot-macos-intel.zip` | macOS (Intel) | same |
 | `PrintTheShot-windows-x64.exe` | Windows | double-click to run |
 
 > CI pipeline: `.github/workflows/build.yml`; full troubleshooting history and release checklist in [docs/CI.md](docs/CI.md). Key points: Windows builds must use `python -m pip`; build failures are surfaced explicitly; Release assets are named per platform and never overwrite each other.
@@ -187,6 +236,9 @@ backup/                     # runtime: pre-update backups
 | Update has no effect | Updates require **restarting the server** |
 | Port in use | Use `--port` to change it |
 | Blank web page | Hard refresh (Cmd+Shift+R); check the console (F12) |
+| **macOS: "cannot verify the developer"** | The app is not notarized. Allow it once: `xattr -dr com.apple.quarantine /Applications/PrintTheShot.app`, or **System Settings → Privacy & Security → Open Anyway**. |
+| **macOS: "is damaged and can't be opened"** | **Not the same thing.** The code signature failed to validate, and right-clicking will not help. You have an old build that predates the signing fix — re-download. `xattr` does **not** fix this. |
+| macOS: app opens but nothing happens | Fixed in current builds. On older ones the app crashed when launched from Finder (it tried to create `shots_data/` next to a read-only working directory). Run the binary from a terminal in a writable directory as a workaround. |
 
 ## License
 

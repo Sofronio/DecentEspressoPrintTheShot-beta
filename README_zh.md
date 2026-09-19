@@ -18,6 +18,47 @@ English | [中文文档](README_zh.md)
 
 DECENT 咖啡机冲泡数据打印服务器的**轻量重构版**。兼容原版(DecentEspressoPrintTheShot)的插件、上传端点和管理界面。
 
+
+> **macOS 首次运行。** 本应用未做公证(需要付费的 Apple 开发者账号),所以 macOS
+> 会拒绝首次启动,提示*「无法打开,因为无法验证开发者」*。放行一次即可:
+>
+> ```bash
+> xattr -dr com.apple.quarantine /Applications/PrintTheShot.app
+> ```
+>
+> 或者到 **系统设置 → 隐私与安全性**,向下滚到「安全性」,点**「仍要打开」**。
+>
+> 注意这和*「已损坏,无法打开」*不是一回事 —— 后者是签名本身校验失败,**右键打开
+> 也救不了**。如果你看到的是「已损坏」,说明拿到的是旧版本,请重新下载。
+
+> **怎么退出。** 它是后台服务,没有窗口,而且(刻意地,见下)不显示 Dock 图标,
+> 所以没有可右键的地方。停止它:
+>
+> ```bash
+> pkill -f PrintTheShot.app          # 或者:kill $(pgrep -f PrintTheShot.app)
+> ```
+>
+> 想知道它在不在跑:`curl localhost:8000/api/status`,或者在「活动监视器」里找
+> `PrintTheShot`。
+
+> **从界面停止服务。** **macOS 打包版**的状态卡片右上角会出现一个红色的
+> **停止服务**按钮。只有它会显示:打包后的 macOS 应用是唯一一种没有别的停止
+> 方式的形态(没 Dock 图标、没窗口、没终端)。Windows 有关掉控制台窗口,Linux
+> 通常就是在终端里跑的。点击后会先
+> 二次确认,然后关掉服务。页面随即被替换成「服务已停止」的提示 —— 因为这时候
+> 页面上所有功能都失效了,这是正常的,不是报错。
+>
+> 想重新启动,再次打开应用即可。
+>
+> 注意这个端点**不限来源 IP**:同一网络里的任何设备都能调用它。自家局域网里没问题;
+> 如果是共享网络,请收紧 `print_the_shot_server.py` 里的 `_allow_shutdown()`。
+
+> **怎么知道它在运行?** 应用启动时会自动打开浏览器里的管理界面。就算你把那个标签页
+> 关了,服务仍在运行,重新访问 <http://localhost:8000> 即可。
+>
+> 它还会写一份日志到
+> `~/Library/Application Support/PrintTheShot/server.log` —— 启动失败时看这里。
+> 打包版没有终端可以打印输出,所以这是唯一的线索。
 ## 特性对照(Beta vs v1.6)
 
 | 特性 | v1.6 | Beta |
@@ -43,7 +84,8 @@ DECENT 咖啡机冲泡数据打印服务器的**轻量重构版**。兼容原版
 | 平台 | 文件 | 运行方式 |
 |---|---|---|
 | Windows | `PrintTheShot-windows-x64.exe` | 双击运行,浏览器打开 `http://localhost:8000` |
-| macOS | `PrintTheShot-macos.zip` | 解压后双击 `PrintTheShot.app`,浏览器打开 `http://localhost:8000` |
+| macOS(Apple Silicon) | `PrintTheShot-macos-arm64.zip` | 解压后双击 `PrintTheShot.app`,浏览器打开 `http://localhost:8000` |
+| macOS(Intel) | `PrintTheShot-macos-intel.zip` | 同上 |
 | Linux | `PrintTheShot-linux` | `chmod +x PrintTheShot-linux && ./PrintTheShot-linux`,浏览器打开 `http://localhost:8000` |
 
 > 二进制由 **GitHub Actions 自动打包**:推送 `v*` tag(如 `git tag v2.0-beta.2 && git push origin v2.0-beta.2`)即自动构建三平台并发布。构建状态见 [Actions 页面](https://github.com/Sofronio/DecentEspressoPrintTheShot-beta/actions),最新安装包见 Releases 页面。
@@ -124,7 +166,8 @@ Release 资产命名(打 tag 后自动生成):
 | 文件 | 平台 | 说明 |
 |---|---|---|
 | `PrintTheShot-linux` | Linux | 命令行直接运行 |
-| `PrintTheShot-macos.zip` | macOS | 解压得到 .app,双击运行 |
+| `PrintTheShot-macos-arm64.zip` | macOS(Apple Silicon) | 解压得到 .app,双击运行 |
+| `PrintTheShot-macos-intel.zip` | macOS(Intel) | 同上 |
 | `PrintTheShot-windows-x64.exe` | Windows | 双击运行 |
 
 > CI 说明:构建流水线见 `.github/workflows/build.yml`,完整踩坑记录与发布验证清单见 [docs/CI_zh.md](docs/CI_zh.md)。要点:Windows 构建必须用 `python -m pip`;构建失败会显式标红;Release 按平台命名,不会互相覆盖。
@@ -187,6 +230,9 @@ backup/                     # 运行时生成:更新前的备份
 | 更新后没变化 | 更新需要**重启服务器**才生效 |
 | 端口被占用 | `--port` 换端口 |
 | 网页空白 | 强制刷新(Cmd+Shift+R);F12 看控制台报错 |
+| **macOS「无法验证开发者」** | 应用未做公证。放行一次即可:`xattr -dr com.apple.quarantine /Applications/PrintTheShot.app`,或到**系统设置 → 隐私与安全性 → 仍要打开**。 |
+| **macOS「已损坏,无法打开」** | **这和上一条不是一回事。** 是代码签名校验失败,**右键打开也救不了**。说明你拿到的是签名修复之前的旧版本,请重新下载。`xattr` **修不了**这个。 |
+| macOS:双击了但什么都没发生 | 新版本已修。旧版本从 Finder 启动时会崩溃(它试图在只读的工作目录旁边创建 `shots_data/`)。临时办法:在终端里、于一个可写目录下直接运行二进制。 |
 
 ## 许可
 

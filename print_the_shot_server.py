@@ -29,10 +29,44 @@ from datetime import datetime
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 
-VERSION = "2.0-beta.2"
-DATA_DIR = "shots_data"
-IMAGE_DIR = "shots_images"
+VERSION = "2.0-beta.3"
+
+
+def runtime_data_dir():
+    """
+    可写的数据目录 / the writable data directory.
+
+    源码运行:用当前工作目录(维持原行为,现有用户的数据不动)。
+    打包运行:必须换地方。.app 由 Finder / `open` 启动时,工作目录是 "/",
+    而那是只读的 —— 原来在这里建 shots_data 会直接抛
+    `OSError: [Errno 30] Read-only file system: 'shots_data'`,
+    整个进程退出。用户看到的是「双击了,什么都没发生」。
+
+    改用各系统约定的用户数据目录。
+
+    Source runs: the current working directory, unchanged, so existing users' data
+    stays where it is.
+    Packaged runs: somewhere else, necessarily. When a .app is launched from Finder
+    or `open`, the working directory is "/", which is read-only — creating
+    shots_data there raised `OSError: [Errno 30] Read-only file system` and killed
+    the process. All the user saw was "I double-clicked it and nothing happened".
+
+    Falls back to the platform's conventional per-user data location.
+    """
+    if not getattr(sys, "frozen", False):
+        return os.getcwd()
+    if sys.platform.startswith("darwin"):
+        return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "PrintTheShot")
+    if os.name == "nt":
+        return os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "PrintTheShot")
+    return os.path.join(os.path.expanduser("~"), ".local", "share", "PrintTheShot")
+
+
+DATA_DIR = os.path.join(runtime_data_dir(), "shots_data")
+IMAGE_DIR = os.path.join(runtime_data_dir(), "shots_images")
 PRINT_ENABLED = True
+#: 打包版启动时自动打开管理界面 / open the web UI on start for packaged builds
+NO_BROWSER = not getattr(sys, "frozen", False)
 BEAN_INFO_ENABLED = True
 MAX_USERS = 5
 received_shots = []
@@ -126,7 +160,7 @@ def perform_update(zip_url, base_dir, lang="zh"):
 def plugin_runtime_path():
     """插件运行时路径:优先 CWD/plugin/(可写,支持GitHub更新);
     打包环境下首次运行从bundle复制过去。"""
-    runtime_dir = os.path.join(os.getcwd(), "plugin")
+    runtime_dir = os.path.join(runtime_data_dir(), "plugin")
     os.makedirs(runtime_dir, exist_ok=True)
     runtime_path = os.path.join(runtime_dir, "plugin.tcl")
     if not os.path.exists(runtime_path) and os.path.exists(PLUGIN_TCL):
@@ -154,6 +188,12 @@ LANGUAGES = {
         "disable_bean_info": "Disable Bean Info",
         "refresh": "Refresh",
         "clear_queue": "Clear Queue",
+        "btn_shutdown": "Stop service",
+        "shutdown_confirm": "Stop the PrintTheShot service? The web interface will become unavailable and you will need to start the app again.",
+        "shutdown_ok": "Service stopped",
+        "shutdown_failed": "Could not stop the service",
+        "shutdown_denied": "Shutdown is not allowed from this address",
+        "shutdown_sent": "Stopping… this page will stop responding.",
         "queue_empty": "Queue is empty",
         "data_upload": "Data Upload",
         "drag_drop": "Drag and drop JSON file here or click to select",
@@ -256,6 +296,12 @@ LANGUAGES = {
         "disable_bean_info": "禁用豆子信息",
         "refresh": "刷新",
         "clear_queue": "清空队列",
+        "btn_shutdown": "停止服务",
+        "shutdown_confirm": "确定要停止 PrintTheShot 服务吗?管理界面将不可用,需要重新启动应用才能恢复。",
+        "shutdown_ok": "服务已停止",
+        "shutdown_failed": "停止失败",
+        "shutdown_denied": "不允许从该地址停止服务",
+        "shutdown_sent": "正在停止…本页面将不再响应。",
         "queue_empty": "队列为空",
         "data_upload": "数据上传",
         "drag_drop": "拖放JSON文件到这里或点击选择",
@@ -391,8 +437,12 @@ def get_text(key):
 # AI 翻译设置(DeepSeek):设置持久化 + 自定义语言 + 翻译缓存
 # AI translation settings (DeepSeek): persisted settings + custom languages + translation cache
 # ---------------------------------------------------------------------------
-SETTINGS_FILE = os.path.join(os.getcwd(), "settings.json")
-TRANSLATION_CACHE_FILE = os.path.join(os.getcwd(), "translations.json")
+# 和 DATA_DIR 同理:打包后不能依赖工作目录,否则从 Finder 启动时写不进去,
+# 用户会看到「设置保存了但下次打开又没了」。
+# Same reasoning as DATA_DIR: a packaged app cannot rely on the working directory,
+# or settings silently fail to persist when launched from Finder.
+SETTINGS_FILE = os.path.join(runtime_data_dir(), "settings.json")
+TRANSLATION_CACHE_FILE = os.path.join(runtime_data_dir(), "translations.json")
 DEEPSEEK_API = "https://api.deepseek.com/chat/completions"
 DEEPSEEK_BALANCE = "https://api.deepseek.com/user/balance"
 AI_TIMEOUT = 8          # 单条翻译超时 / single-translation timeout (s)
@@ -1182,6 +1232,84 @@ def print_image(image_path):
 
 
 # ---------------------------------------------------------------------------
+# 停止服务 / stopping the service
+# ---------------------------------------------------------------------------
+# 打包版(.app)没有 Dock 图标、没有窗口、没有终端,用户需要一个能停掉它的入口 ——
+# 放在 Web UI 里最自然,因为他本来就在那儿。
+#
+# ⚠️ 这个端点**不限来源 IP**。服务本身监听局域网(DE1 插件要往这儿上传),所以
+# 同一网段内的任何设备都能关掉它。这是刻意的选择:部署在自家局域网里的小工具,
+# 方便比防篡改重要。如果要收紧,把 _allow_shutdown 改成只放行 127.0.0.1 即可。
+#
+# ⚠️ This endpoint is **not restricted by source IP**. The service listens on the LAN
+# by design (the DE1 plugin uploads to it), so any device on the same network can
+# stop it. That is a deliberate choice: for a small tool on a home network, being
+# convenient beats being tamper-proof. To tighten it, restrict _allow_shutdown to
+# 127.0.0.1.
+_shutdown_hook = None
+
+
+def show_stop_button():
+    """
+    界面上要不要显示「停止服务」按钮 / whether the web UI should offer a stop button.
+
+    只有一种情况需要:**macOS 的打包版**。
+
+    因为只有它没有任何别的停止方式 —— 它是 LSUIElement,不进 Dock、没有窗口、
+    双击启动也没有终端,用户想停掉它的话除了命令行以外别无他法。按钮就是给这种
+    情况准备的。
+
+    其他情况都有现成的办法,按钮是多余的:
+      - Windows 打包版:console=True 会开一个控制台窗口,关掉就行
+      - Linux:通常就是在终端里跑的,Ctrl+C
+      - 各平台的源码运行:同上,终端就在边上
+
+    如果你把服务跑在无终端的环境里(比如 Linux 上 nohup / systemd),把这里改成
+    直接 return True 即可。
+
+    Exactly one case needs it: **a packaged macOS build.**
+
+    That is the only configuration with no other way to stop it — it is a
+    LSUIElement, so it is not in the Dock, has no window, and double-clicking it opens
+    no terminal. Without a button the user would have no option but the command line.
+
+    Everywhere else already has an obvious way, and the button is redundant:
+      - packaged Windows: console=True gives it a console window you can close
+      - Linux: it is normally run from a terminal; Ctrl+C
+      - source runs anywhere: same, the terminal is right there
+
+    If you run it somewhere without a terminal (nohup or systemd on Linux), make this
+    return True unconditionally.
+    """
+    return getattr(sys, "frozen", False) and sys.platform == "darwin"
+
+
+def _allow_shutdown(_client_ip):
+    """
+    是否允许来自该地址的停止请求 / whether a shutdown request from this address is allowed.
+
+    目前一律允许 —— 想收紧就在这里按 IP 判断,不用改别处。
+    Currently always allowed. Tighten here rather than anywhere else.
+    """
+    return True
+
+
+def request_shutdown(delay=0.4):
+    """
+    请求停止服务 / ask the server to stop.
+
+    延迟一下再真的停,好让 HTTP 响应先发出去 —— 否则用户看到的是"连接被重置",
+    而不是"已停止"。
+    Delayed slightly so the HTTP response gets out first; otherwise the user sees a
+    connection reset instead of a confirmation.
+    """
+    if _shutdown_hook is None:
+        return False
+    threading.Timer(delay, _shutdown_hook).start()
+    return True
+
+
+# ---------------------------------------------------------------------------
 # HTTP 服务器 HTTP Server
 # ---------------------------------------------------------------------------
 class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
@@ -1272,6 +1400,8 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_beaninfo_setting()
         elif path == "/api/settings/print":
             self.handle_print_setting()
+        elif path == "/api/shutdown":
+            self.handle_shutdown()
         elif path == "/api/plugin/update":
             self.handle_plugin_update()
         elif path == "/api/update":
@@ -1335,6 +1465,10 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             "print_enabled": PRINT_ENABLED,
             "bean_info_enabled": BEAN_INFO_ENABLED,
             "language": current_language,
+            # 前端据此决定要不要显示「停止服务」按钮(见 show_stop_button 的说明)
+            # The front end uses this to decide whether to offer the stop button
+            # (see show_stop_button for why it is conditional)
+            "show_stop_button": show_stop_button(),
         })
 
     def send_queue_status(self):
@@ -1472,6 +1606,11 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
                    else "Packaged build can't self-update — download the new installer")
             self._send_json({"success": False, "message": msg})
             return
+        # 更新要写到「服务真正在跑的那份代码」所在的地方。源码模式是仓库根
+        # (即 CWD),打包版则是数据目录 —— 打包版本来也不支持在线更新。
+        # Update into wherever the running code actually lives: the repository root
+        # (the CWD) for source runs, the data directory for packaged ones — though
+        # packaged builds do not support self-update anyway.
         ok, msg = perform_update(GITHUB_ZIP_URL, os.getcwd(), current_language)
         self._send_json({"success": ok, "message": msg}, 200 if ok else 500)
 
@@ -1618,6 +1757,28 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"success": True})
         except Exception as e:
             self._send_json({"success": False, "message": str(e)}, 500)
+
+    def handle_shutdown(self):
+        """
+        POST /api/shutdown — 停止服务 / stop the service.
+
+        先回响应、再真的停(见 request_shutdown 的说明)。
+        Answer first, then actually stop (see request_shutdown).
+        """
+        client = self.client_address[0] if self.client_address else "?"
+        if not _allow_shutdown(client):
+            self._send_json({
+                "success": False,
+                "message": get_text("shutdown_denied"),
+            }, 403)
+            return
+        ok = request_shutdown()
+        print(f"🛑 收到停止请求 / shutdown requested from {client}")
+        self._send_json({
+            "success": ok,
+            "message": get_text("shutdown_ok") if ok else get_text("shutdown_failed"),
+            "client": client,
+        })
 
     def handle_plugin_update(self):
         """从GitHub拉取最新plugin.tcl,先本地备份再覆盖"""
@@ -1785,6 +1946,77 @@ def ensure_directories():
         os.makedirs(directory, exist_ok=True)
 
 
+def setup_packaged_logging():
+    """
+    打包版把输出同时写进日志文件 / also write output to a log file in packaged builds.
+
+    为什么需要:PyInstaller 在 macOS 上用了 argv_emulation,打包后的进程 stdout
+    是断开的 —— 双击启动没有终端,启动横幅、报错、异常堆栈全都无处可去。用户看到的
+    只有「双击了,没反应」,而我们这边连一句线索都拿不到。
+
+    这里把 stdout/stderr 接到数据目录下的 server.log(仍然保留原有的 stdout,
+    所以从终端运行时行为不变)。出问题时让用户把这个文件发过来即可。
+
+    Why this exists: on macOS PyInstaller uses argv_emulation, and the packaged
+    process has no working stdout — launching from Finder means no terminal, so the
+    startup banner, warnings and tracebacks all go nowhere. The user sees "I
+    double-clicked and nothing happened" and we get not one clue.
+
+    This tees stdout/stderr into server.log in the data directory (the original
+    stdout is kept, so behaviour from a terminal is unchanged). When something goes
+    wrong, that file is what the user can send.
+
+    返回日志路径,失败时返回 None。
+    Returns the log path, or None if it could not be set up.
+    """
+    if not getattr(sys, "frozen", False):
+        return None
+    try:
+        log_path = os.path.join(runtime_data_dir(), "server.log")
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        # 每次启动新开一份,同时保留上一份 —— 崩溃之后重启,上一次的记录不能丢
+        # A fresh file each start, keeping the previous one: after a crash and a
+        # restart, the record of the crash must not be overwritten
+        if os.path.exists(log_path):
+            try:
+                os.replace(log_path, log_path + ".1")
+            except OSError:
+                pass
+
+        class _Tee:
+            """同时写日志和原 stdout / write to the log and to the original stdout."""
+            def __init__(self, *streams):
+                self._streams = [x for x in streams if x is not None]
+
+            def write(self, data):
+                for st in self._streams:
+                    try:
+                        st.write(data)
+                    except Exception:
+                        pass
+                return len(data)
+
+            def flush(self):
+                for st in self._streams:
+                    try:
+                        st.flush()
+                    except Exception:
+                        pass
+
+            def isatty(self):
+                # 让 argparse 等按「不是终端」处理,避免依赖终端宽度
+                # So argparse and friends treat it as "not a terminal"
+                return False
+
+        fh = open(log_path, "a", encoding="utf-8", buffering=1)
+        sys.stdout = _Tee(fh, sys.__stdout__)
+        sys.stderr = _Tee(fh, sys.__stderr__)
+        print(f"📝 日志 / log: {log_path}")
+        return log_path
+    except Exception:
+        return None
+
+
 def persist_index():
     """把历史列表写入 shots_data/index.json(重启后恢复用)"""
     try:
@@ -1878,14 +2110,36 @@ def print_server_info(port):
     print("🍳  Ctrl+C 停止 / Stop")
     print("🍳 " + "=" * 60)
 
+    # 打包版由双击启动:没有终端、没有窗口、也不显示 Dock 图标,用户看不到上面这
+    # 一屏横幅,无从判断"到底跑起来没有"。自动打开一次管理界面,让他立刻看到结果。
+    #
+    # 只在打包版这么做:源码运行时开发者就在终端边上,再蹦个浏览器只是打扰。
+    # 用 --no-browser 可以关掉。
+    #
+    # A packaged app is started by double-click: no terminal, no window, and no Dock
+    # icon, so none of the banner above is visible and there is no way to tell
+    # whether it came up at all. Open the web UI once so the user immediately sees
+    # the result.
+    #
+    # Packaged builds only: when running from source the developer is sitting at a
+    # terminal and a browser window is just noise. --no-browser turns it off.
+    if not NO_BROWSER:
+        try:
+            import webbrowser
+            webbrowser.open("http://localhost:%d" % port)
+        except Exception as e:
+            print(f"⚠️ 无法自动打开浏览器 / could not open a browser: {e}")
+
 
 def main():
-    global PRINT_ENABLED
+    global PRINT_ENABLED, NO_BROWSER, _shutdown_hook
     parser = argparse.ArgumentParser(description="PrintTheShot Beta server")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--render", nargs="+", metavar=("JSON", "[PNG]"),
                         help="仅渲染图表到PNG(测试用)")
     parser.add_argument("--no-print", action="store_true", help="启动时禁用自动打印")
+    parser.add_argument("--no-browser", action="store_true",
+                        help="启动时不自动打开管理界面 / do not open the web UI on start")
     args = parser.parse_args()
 
     if args.render:
@@ -1901,6 +2155,12 @@ def main():
 
     if args.no_print:
         PRINT_ENABLED = False
+    if args.no_browser:
+        NO_BROWSER = True
+
+    # 尽早接上日志:任何后续的报错都要能被记下来
+    # Attach the log as early as possible so any later failure is recorded
+    setup_packaged_logging()
 
     ensure_directories()
     load_settings()   # 加载AI设置与自定义语言 / load AI settings & custom languages
@@ -1912,11 +2172,17 @@ def main():
         daemon_threads = True
 
     with ReuseTCPServer(("", args.port), PrintTheShotHandler) as httpd:
+        # 把停止钩子接到这个 server 实例上,Web UI 的"停止服务"按钮走的就是它
+        # Wire the shutdown hook to this server instance; the web UI's stop button
+        # goes through it
+        _shutdown_hook = httpd.shutdown
+
         print(f"✅ 服务器启动成功 / Server started on port {args.port}")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            print("\n🛑 服务器停止 / Server stopped")
+            pass
+        print("\n🛑 服务器已停止 / Server stopped")
 
 
 if __name__ == "__main__":

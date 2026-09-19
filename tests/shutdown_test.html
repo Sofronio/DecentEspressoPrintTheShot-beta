@@ -1,0 +1,45 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+<iframe id="f" src="http://localhost:8887/" width="1200" height="900"></iframe>
+<script>
+var out = [];
+function done() {
+  var pre = document.createElement('pre'); pre.id='JSON';
+  pre.textContent = JSON.stringify({results: out, failed: out.filter(function(r){return !r.ok;}).length});
+  document.body.appendChild(pre);
+}
+function waitReady(cb){
+  var n=0;
+  (function poll(){
+    if (n++ > 80) { out.push({name:'page ready', ok:false, detail:'timeout'}); done(); return; }
+    try {
+      var d = document.getElementById('f').contentDocument;
+      if (d && d.getElementById('btn-shutdown') && d.getElementById('status-grid').children.length >= 6) { cb(d); return; }
+    } catch(e){}
+    setTimeout(poll, 250);
+  })();
+}
+waitReady(function(d){
+  var btn = d.getElementById('btn-shutdown');
+  out.push({name:'停止按钮存在 / stop button exists', ok: !!btn});
+  var cs = document.getElementById('f').contentWindow.getComputedStyle(btn);
+  out.push({name:'按钮可见(打包版应显示)/ visible', ok: cs.display !== 'none', detail: 'display=' + cs.display});
+  out.push({name:'按钮有文字 / has a label', ok: btn && btn.textContent.trim().length > 0, detail: btn ? btn.textContent.trim() : ''});
+  out.push({name:'按钮是红色(与刷新区分)/ styled as dangerous', ok: btn && btn.className.indexOf('red') >= 0, detail: btn ? btn.className : ''});
+  out.push({name:'stopService 函数存在 / function defined', ok: typeof document.getElementById('f').contentWindow.stopService === 'function'});
+  // 自动接受 confirm 然后点按钮 / auto-accept confirm, then click
+  document.getElementById('f').contentWindow.confirm = function(){ return true; };
+  btn.click();
+  // 等服务停掉再确认页面切成终态 / wait for the final state
+  var n = 0;
+  (function poll2(){
+    if (n++ > 40) { out.push({name:'页面切到已停止状态', ok:false, detail:'timeout'}); done(); return; }
+    setTimeout(function(){
+      var txt = d.body.innerText || '';
+      // 中文或英文任一即可(页面语言取决于服务端当前语言)
+      var hit = txt.indexOf('服务已停止') >= 0 || txt.indexOf('Service stopped') >= 0;
+      if (hit) { out.push({name:'页面切到已停止状态 / shows the final state', ok:true, detail:txt.slice(0,40).replace(/\s+/g,' ')}); done(); return; }
+      poll2();
+    }, 300);
+  })();
+});
+</script></body></html>
