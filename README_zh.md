@@ -19,17 +19,25 @@ English | [中文文档](README_zh.md)
 DECENT 咖啡机冲泡数据打印服务器的**轻量重构版**。兼容原版(DecentEspressoPrintTheShot)的插件、上传端点和管理界面。
 
 
-> **macOS 首次运行。** 本应用未做公证(需要付费的 Apple 开发者账号),所以 macOS
-> 会拒绝首次启动,提示*「无法打开,因为无法验证开发者」*。放行一次即可:
+> ### macOS:首次启动前放行一次
+>
+> 本应用未做公证(需要付费的 Apple 开发者账号),所以 macOS 会拦住首次启动。
+> 两种办法,任选其一:
+>
+> **办法 A —— 一条命令**(把应用放到 `/Applications` 之后执行):
 >
 > ```bash
 > xattr -dr com.apple.quarantine /Applications/PrintTheShot.app
 > ```
 >
-> 或者到 **系统设置 → 隐私与安全性**,向下滚到「安全性」,点**「仍要打开」**。
+> **办法 B —— 走界面:** 先双击一次让它报错,然后到
+> **系统设置 → 隐私与安全性**,向下滚到「安全性」,点**「仍要打开」**。
 >
-> 注意这和*「已损坏,无法打开」*不是一回事 —— 后者是签名本身校验失败,**右键打开
-> 也救不了**。如果你看到的是「已损坏」,说明拿到的是旧版本,请重新下载。
+> 之后每次都能正常启动。每次下载只需要做一次。
+>
+> > ⚠️ 别把上一条和*「已损坏,无法打开」*搞混。那是另一种失败:代码签名本身没通过
+> > 校验,**上面两种办法都救不了** —— 连右键→打开也没用。看到「已损坏」说明你
+> > 拿到的是签名修复之前的版本,请下载当前 Release。
 
 > **怎么退出。** 它是后台服务,没有窗口,而且(刻意地,见下)不显示 Dock 图标,
 > 所以没有可右键的地方。停止它:
@@ -84,7 +92,7 @@ DECENT 咖啡机冲泡数据打印服务器的**轻量重构版**。兼容原版
 | 平台 | 文件 | 运行方式 |
 |---|---|---|
 | Windows | `PrintTheShot-windows-x64.exe` | 双击运行,浏览器打开 `http://localhost:8000` |
-| macOS(Apple Silicon) | `PrintTheShot-macos-arm64.zip` | 解压后双击 `PrintTheShot.app`,浏览器打开 `http://localhost:8000` |
+| macOS(Apple Silicon) | `PrintTheShot-macos-arm64.zip` | 解压 → **先放行一次(见下)** → 双击 `PrintTheShot.app`,浏览器打开 `http://localhost:8000` |
 | macOS(Intel) | `PrintTheShot-macos-intel.zip` | 同上 |
 | Linux | `PrintTheShot-linux` | `chmod +x PrintTheShot-linux && ./PrintTheShot-linux`,浏览器打开 `http://localhost:8000` |
 

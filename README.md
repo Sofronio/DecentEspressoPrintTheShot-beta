@@ -43,24 +43,31 @@ No Python needed — grab your platform's file from the [Releases page](https://
 | Platform | File | How to run |
 |---|---|---|
 | Windows | `PrintTheShot-windows-x64.exe` | double-click, then open `http://localhost:8000` |
-| macOS (Apple Silicon) | `PrintTheShot-macos-arm64.zip` | unzip → double-click `PrintTheShot.app`, then open `http://localhost:8000` |
+| macOS (Apple Silicon) | `PrintTheShot-macos-arm64.zip` | unzip → **allow it once (see below)** → double-click `PrintTheShot.app`, then open `http://localhost:8000` |
 | macOS (Intel) | `PrintTheShot-macos-intel.zip` | same |
 | Linux | `PrintTheShot-linux` | `chmod +x PrintTheShot-linux && ./PrintTheShot-linux`, then open `http://localhost:8000` |
 
-> **First launch on macOS.** The app is not notarized (that needs a paid Apple
-> Developer account), so macOS will refuse the first launch with
-> *"cannot be opened because the developer cannot be verified"*. Allow it once:
+> ### macOS: allow it once before the first launch
+>
+> The app is not notarized (that needs a paid Apple Developer account), so macOS
+> blocks the first launch. Two ways, either works:
+>
+> **Option A — one command** (do this after moving the app to `/Applications`):
 >
 > ```bash
 > xattr -dr com.apple.quarantine /Applications/PrintTheShot.app
 > ```
 >
-> or go to **System Settings → Privacy & Security**, scroll to Security, and click
+> **Option B — through the UI:** try to open it once, then go to
+> **System Settings → Privacy & Security**, scroll down to *Security*, and click
 > **Open Anyway**.
 >
-> This is *not* the same as *"the app is damaged"* — that message means the code
-> signature itself failed and cannot be bypassed. If you see it, you have an old
-> build; re-download.
+> After that it launches normally, every time. You only do this once per download.
+>
+> > ⚠️ Do not confuse this with *"the app is damaged and can't be opened"*. That is a
+> > different failure: the code signature itself did not validate, and **neither
+> > option above will help** — not even right-click → Open. It means you have a build
+> > from before the signing fix; download the current release.
 
 > **Stopping it.** As a background service it has no window and (by design, see
 > below) no Dock icon, so there is nothing to right-click. To stop it:
