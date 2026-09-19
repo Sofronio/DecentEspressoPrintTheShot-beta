@@ -31,7 +31,6 @@ from PIL import Image, ImageDraw, ImageFont
 
 VERSION = "2.0-beta.3"
 
-
 def runtime_data_dir():
     """
     可写的数据目录 / the writable data directory.
@@ -61,7 +60,6 @@ def runtime_data_dir():
         return os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "PrintTheShot")
     return os.path.join(os.path.expanduser("~"), ".local", "share", "PrintTheShot")
 
-
 DATA_DIR = os.path.join(runtime_data_dir(), "shots_data")
 IMAGE_DIR = os.path.join(runtime_data_dir(), "shots_images")
 PRINT_ENABLED = True
@@ -85,11 +83,31 @@ def resource_path(rel):
     return os.path.join(base, rel)
 
 FONT_PATH = resource_path(os.path.join("fonts", "NotoSansCJKsc-Regular.otf"))
+# 自更新与插件分发的地址 —— 必须指向**本项目自己的仓库**。
+#
+# 原来这三个都指向 Sofronio/DecentEspressoPrintTheShot(原项目),而那个仓库里
+# 是 v1.6。后果不是「偶尔拉错版本」,而是自更新彻底失效:「检查更新」读到的远端
+# 版本恒为 1.6,永远判定为「已是最新」,用户永远收不到更新。
+#
+# 之所以没造成破坏,只是因为 1.6 比当前版本号小,更新按钮保持禁用 —— 万一哪天
+# 原仓库的版本号被改大,那就成了「把用户降级到 v1.6」。
+#
+# These three URLs must point at **this project's own repository**.
+#
+# They used to point at Sofronio/DecentEspressoPrintTheShot, which holds v1.6. The
+# consequence was not "occasionally the wrong version" but a self-update that never
+# worked at all: the remote version read as 1.6 forever, so the check always said
+# "already up to date" and no update was ever offered.
+#
+# It caused no damage only because 1.6 sorts below the current version, leaving the
+# update button disabled — had that repository's version ever been bumped, this
+# would have downgraded users to v1.6.
+_REPO = "Sofronio/DecentEspressoPrintTheShot-beta"
+PLUGIN_GITHUB_URL = f"https://raw.githubusercontent.com/{_REPO}/main/plugin/plugin.tcl"
+RAW_SERVER_URL = f"https://raw.githubusercontent.com/{_REPO}/main/print_the_shot_server.py"
+GITHUB_ZIP_URL = f"https://codeload.github.com/{_REPO}/zip/refs/heads/main"
 WEB_INDEX = resource_path(os.path.join("web", "index.html"))
 PLUGIN_TCL = resource_path(os.path.join("plugin", "plugin.tcl"))  # bundle内(只读)
-PLUGIN_GITHUB_URL = "https://raw.githubusercontent.com/Sofronio/DecentEspressoPrintTheShot/main/plugin/plugin.tcl"
-RAW_SERVER_URL = "https://raw.githubusercontent.com/Sofronio/DecentEspressoPrintTheShot/main/print_the_shot_server.py"
-GITHUB_ZIP_URL = "https://codeload.github.com/Sofronio/DecentEspressoPrintTheShot/zip/refs/heads/main"
 
 
 def _version_key(v):
@@ -128,7 +146,6 @@ def _version_key(v):
     if pre:
         return (major, minor, patch, 0, int(pre.group(2)))
     return (major, minor, patch, 1, 0)
-
 
 def perform_update(zip_url, base_dir, lang="zh"):
     """从GitHub仓库ZIP更新整个服务:下载→校验→备份→替换。
@@ -186,7 +203,6 @@ def perform_update(zip_url, base_dir, lang="zh"):
         return True, msg
     except Exception as e:
         return False, (f"更新失败: {e}" if lang == "zh" else f"Update failed: {e}")
-
 
 def plugin_runtime_path():
     """插件运行时路径:优先 CWD/plugin/(可写,支持GitHub更新);
@@ -439,7 +455,6 @@ BEAN_TRANSLATIONS = {
     "洪都拉斯 戈沙·拉萨尔瓦赫瑰夏 · 水洗": "Honduras Gosha La Salvaje Gesha · Washed",
 }
 
-
 def display_name(name, mapping):
     """按当前界面语言翻译名称;静态表 + AI翻译缓存;未知名称原样返回
     Translate a name for the current UI language: static map first, then the AI translation cache"""
@@ -459,10 +474,8 @@ def display_name(name, mapping):
         return cached
     return name
 
-
 def get_text(key):
     return LANGUAGES.get(current_language, LANGUAGES["en"]).get(key, key)
-
 
 # ---------------------------------------------------------------------------
 # AI 翻译设置(DeepSeek):设置持久化 + 自定义语言 + 翻译缓存
@@ -481,7 +494,6 @@ AI_TIMEOUT_BATCH = 30   # 批量UI文案翻译超时 / batch UI-strings timeout 
 
 settings = {"deepseek_key": "", "ai_enabled": False, "languages": {}}
 translation_cache = {}  # {"zh": {"原文": "译文"}}  / per-language cache
-
 
 def load_settings():
     """启动时加载设置与自定义语言 / load settings and custom languages at startup"""
@@ -503,7 +515,6 @@ def load_settings():
         if info.get("strings"):
             LANGUAGES[code] = info["strings"]
 
-
 def save_settings():
     """持久化设置(settings.json 含 API key,已在 .gitignore)"""
     try:
@@ -512,14 +523,12 @@ def save_settings():
     except Exception as e:
         print(f"⚠️ 设置保存失败: {e}")
 
-
 def save_translation_cache():
     try:
         with open(TRANSLATION_CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(translation_cache, f, ensure_ascii=False, indent=1)
     except Exception:
         pass
-
 
 def ai_call(messages, timeout=AI_TIMEOUT):
     """调用 DeepSeek,返回响应文本;失败抛异常 / call DeepSeek, returns text"""
@@ -540,7 +549,6 @@ def ai_call(messages, timeout=AI_TIMEOUT):
         resp = json.loads(r.read().decode("utf-8"))
     return resp["choices"][0]["message"]["content"].strip()
 
-
 def clean_bean_text(text):
     """清理豆子信息文本:去掉连字符/间隔符等无效信息,保留数字连字符与单词内连字符
     Clean bean-info text: strip hyphens/separators, keep numeric & word-internal hyphens"""
@@ -555,7 +563,6 @@ def clean_bean_text(text):
     t = re.sub(r"\s+", " ", t)
     t = re.sub(r"^[,，;；\s]+|[,，;；\s]+$", "", t)
     return t.strip()
-
 
 def ai_translate(text, target_lang, allow_api=True):
     """把豆子信息翻译成目标语言;缓存优先,静态表快速路径,失败返回原文
@@ -599,7 +606,6 @@ def ai_translate(text, target_lang, allow_api=True):
         print(f"⚠️ AI 翻译失败(使用原文): {e}")
         return text  # 降级:原文,打印不受影响 / fallback: original text
 
-
 def rerender_shot_in_lang(shot_data, image_path, machine_id, target_lang, allow_api=True):
     """把一条shot按目标语言重渲染(豆子信息翻译进图表),返回渲染结果
     Re-render a shot in the target language (bean info translated into the chart)"""
@@ -617,10 +623,8 @@ def rerender_shot_in_lang(shot_data, image_path, machine_id, target_lang, allow_
         shot_data.setdefault("meta", {})["bean"] = bean_meta
     return render_chart(shot_data, image_path, machine_id, target_lang)
 
-
 def is_windows():
     return platform.system() == "Windows"
-
 
 # ---------------------------------------------------------------------------
 # 智能换行(移植自原版,逻辑一致) Smart text wrapping (ported from v1.6, same logic)
@@ -658,14 +662,12 @@ def wrap_by_width(text, font, max_width, max_lines=16):
         lines.append("...")
     return lines
 
-
 def fit_font(text, base_size, col_width):
     """按文本长度调整字号,保证能放下 / pick a font size that fits the text length"""
     size = base_size
     while size > 12 and _font(size).getlength(str(text)) > col_width * 2.2:
         size -= 2
     return _font(size)
-
 
 def smart_wrap_text(text, max_cn=7, max_en=15, max_lines=12):
     """按字符数智能换行:中文按字符,英文按单词"""
@@ -730,7 +732,6 @@ def smart_wrap_text(text, max_cn=7, max_en=15, max_lines=12):
         lines.append("...")
     return lines
 
-
 # ---------------------------------------------------------------------------
 # PIL 图表渲染(替代 matplotlib) PIL chart rendering (replaces matplotlib)
 # ---------------------------------------------------------------------------
@@ -750,14 +751,11 @@ COL2_X, COL2_MAXW = 1085, 211    # 第二列文本(豆子/方案信息,贴近图
 LINE_H = 26                       # 文本行距
 LEGEND_Y = 474
 
-
 def _font(px):
     return ImageFont.truetype(FONT_PATH, px)
 
-
 def _text_w(draw, font, text):
     return draw.textlength(text, font=font)
-
 
 def _vtext(img, draw, x, y_center, text, font, fill=0):
     """竖向文本(旋转90度,自下而上阅读,同matplotlib ylabel)。
@@ -776,7 +774,6 @@ def _vtext(img, draw, x, y_center, text, font, fill=0):
     # 用tmp作mask:只在字形位置写入 fill(黑),其余保持原图 Use tmp as a mask: write fill (black) only where glyphs are, keep the rest intact
     img.paste(fill, (x, int(y_center - tmp.height / 2)), mask=tmp)
 
-
 def _dash_line(draw, x1, y1, x2, y2, width=1, fill=0, pattern=(14, 8)):
     """任意方向虚线(沿线段方向参数化步进,支持斜线/曲线段)"""
     dx, dy = x2 - x1, y2 - y1
@@ -794,7 +791,6 @@ def _dash_line(draw, x1, y1, x2, y2, width=1, fill=0, pattern=(14, 8)):
                       fill=fill, width=width)
         pos = end
         i += 1
-
 
 def _draw_path_dashed(draw, pts, pattern, width=3):
     """沿折线路径连续应用虚线模式(相位跨线段延续,与matplotlib一致)。
@@ -823,7 +819,6 @@ def _draw_path_dashed(draw, pts, pattern, width=3):
                 phase = 0.0
                 seg_idx += 1
 
-
 def _plot_curve_style(draw, xs, ys, x_scale, y_max, style):
     """画曲线,与原版matplotlib一致:线型沿路径方向绘制,相位连续。
     所有值钳制到[0, y_max](传感器毛刺会产生负值,必须避免画到图外)。
@@ -848,7 +843,6 @@ def _plot_curve_style(draw, xs, ys, x_scale, y_max, style):
         pattern = {"dashed": (17, 8), "dotted": (2.5, 7), "dashdot": (17, 8.5, 2.5, 8.5)}[style]
         _draw_path_dashed(draw, pts, pattern, width=3)
 
-
 def _nice_ticks(vmin, vmax, max_ticks=10):
     """选"漂亮"的刻度步长:从候选步长中挑一个让刻度数<=max_ticks"""
     span = vmax - vmin
@@ -860,7 +854,6 @@ def _nice_ticks(vmin, vmax, max_ticks=10):
             step = c
             break
     return [v for v in (vmin + i * step for i in range(int(span / step) + 2)) if v <= vmax + 1e-9]
-
 
 def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
     """从DE1 JSON渲染小票图表(纯PIL,黑白)"""
@@ -1152,7 +1145,6 @@ def render_chart(data, output_path, machine_id="UNKNOWN", lang="zh"):
         traceback.print_exc()
         return False
 
-
 def generate_print_image(png_path):
     """生成打印用BMP(与v1.6相同:放大4倍->旋转->二值化)"""
     try:
@@ -1171,7 +1163,6 @@ def generate_print_image(png_path):
     except Exception as e:
         print(f"❌ Print image generation failed: {e}")
         return None
-
 
 # ---------------------------------------------------------------------------
 # 打印(Windows: ctypes GDI;macOS/Linux: lpr/lp) Printing (Windows: ctypes GDI; macOS/Linux: lpr/lp)
@@ -1227,7 +1218,6 @@ def windows_print_bmp(bmp_path):
         print(f"❌ Windows print error: {e}")
         return False
 
-
 def print_image(image_path):
     """打印图片:Windows走GDI,其他平台走lpr/lp"""
     if not PRINT_ENABLED:
@@ -1261,7 +1251,6 @@ def print_image(image_path):
     print(f"❌ Print failed (lpr/lp不可用): 请确认CUPS打印机已配置")
     return False
 
-
 # ---------------------------------------------------------------------------
 # 停止服务 / stopping the service
 # ---------------------------------------------------------------------------
@@ -1278,7 +1267,6 @@ def print_image(image_path):
 # convenient beats being tamper-proof. To tighten it, restrict _allow_shutdown to
 # 127.0.0.1.
 _shutdown_hook = None
-
 
 def show_stop_button():
     """
@@ -1314,7 +1302,6 @@ def show_stop_button():
     """
     return getattr(sys, "frozen", False) and sys.platform == "darwin"
 
-
 def _allow_shutdown(_client_ip):
     """
     是否允许来自该地址的停止请求 / whether a shutdown request from this address is allowed.
@@ -1323,7 +1310,6 @@ def _allow_shutdown(_client_ip):
     Currently always allowed. Tighten here rather than anywhere else.
     """
     return True
-
 
 def request_shutdown(delay=0.4):
     """
@@ -1338,7 +1324,6 @@ def request_shutdown(delay=0.4):
         return False
     threading.Timer(delay, _shutdown_hook).start()
     return True
-
 
 # ---------------------------------------------------------------------------
 # HTTP 服务器 HTTP Server
@@ -1968,14 +1953,12 @@ class PrintTheShotHandler(http.server.SimpleHTTPRequestHandler):
             print("🖨️ 开始后台打印...")
             self._do_print(image_path)
 
-
 # ---------------------------------------------------------------------------
 # 入口 Entry
 # ---------------------------------------------------------------------------
 def ensure_directories():
     for directory in (DATA_DIR, IMAGE_DIR):
         os.makedirs(directory, exist_ok=True)
-
 
 def setup_packaged_logging():
     """
@@ -2047,7 +2030,6 @@ def setup_packaged_logging():
     except Exception:
         return None
 
-
 def persist_index():
     """把历史列表写入 shots_data/index.json(重启后恢复用)"""
     try:
@@ -2056,7 +2038,6 @@ def persist_index():
                 json.dump(received_shots, f, ensure_ascii=False)
     except Exception as e:
         print(f"⚠️ 持久化失败 / Persist failed: {e}")
-
 
 def load_history():
     """启动时恢复历史:index.json 优先,再扫描目录兜底(崩溃恢复)"""
@@ -2117,7 +2098,6 @@ def load_history():
         received_shots = restored[:5000]
     persist_index()
 
-
 def print_server_info(port):
     import socket
     hostname = socket.gethostname()
@@ -2160,7 +2140,6 @@ def print_server_info(port):
             webbrowser.open("http://localhost:%d" % port)
         except Exception as e:
             print(f"⚠️ 无法自动打开浏览器 / could not open a browser: {e}")
-
 
 def main():
     global PRINT_ENABLED, NO_BROWSER, _shutdown_hook
@@ -2214,7 +2193,6 @@ def main():
         except KeyboardInterrupt:
             pass
         print("\n🛑 服务器已停止 / Server stopped")
-
 
 if __name__ == "__main__":
     main()
